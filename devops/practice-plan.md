@@ -34,10 +34,13 @@ infrastructure/
 │       # └── prometheus-stack.yaml    # Wave 10 (Фаза 6)
 └── manifests/
     ├── argocd-config/
-    │   └── repository-secret.yaml     # Для private repos
+    │   └── repository-secret.example.yaml  # Шаблон (НЕ коммитить реальный!)
     └── metallb-config/
         └── config.yaml                # IPAddressPool + L2Advertisement
 ```
+
+> **Важно:** Приватные ключи НИКОГДА не коммитятся в git!
+> `.example.yaml` — только шаблон, реальный секрет создаётся локально.
 
 ### Как работает
 ```
@@ -62,12 +65,14 @@ kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.5/manifests/install.yaml
 kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=300s
 
-# 2. Connect repo (только для private repos!)
+# 2. Connect repo (только для PRIVATE repos!)
 # Docs: https://argo-cd.readthedocs.io/en/stable/user-guide/private-repositories/
 ssh-keygen -t ed25519 -C "argocd" -f ~/.ssh/argocd-key -N ""
-cat ~/.ssh/argocd-key.pub  # → GitHub repo → Settings → Deploy keys
-# Отредактируй manifests/argocd-config/repository-secret.yaml и примени:
-kubectl apply -f manifests/argocd-config/repository-secret.yaml
+cat ~/.ssh/argocd-key.pub  # → GitHub repo → Settings → Deploy keys → Add
+# Создай секрет из шаблона (НЕ коммить!):
+cp manifests/argocd-config/repository-secret.example.yaml /tmp/secret.yaml
+vim /tmp/secret.yaml  # вставь приватный ключ
+kubectl apply -f /tmp/secret.yaml && rm /tmp/secret.yaml
 
 # 3. Apply root
 kubectl apply -f bootstrap/root.yaml
