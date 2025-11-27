@@ -31,15 +31,18 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 | MetalLB Config | - | 2 |
 | Longhorn | 1.10.1 | 3 |
 
-## Фаза 2: GitOps Structure
+## Фаза 2: GitOps Structure ✅
 - [x] Library Helm chart (`example-deploy/_library/`)
 - [x] Helm chart для example-api (`example-deploy/services/example-api/`)
-- [x] ApplicationSet для сервисов (`example-infrastructure/apps/templates/services-appset.yaml`)
-- [ ] SSH ключ для example-deploy в ArgoCD
-- [ ] Закоммитить и запушить example-deploy
-- [ ] Закоммитить и запушить example-infrastructure
+- [x] ApplicationSet для сервисов (Git Directory Generator)
+- [x] SSH ключ для example-deploy в ArgoCD
+- [x] Закоммитить и запушить example-deploy
+- [x] Закоммитить и запушить example-infrastructure
+- [x] Проверить что Application создался и синхронизировался
 
 Дока: [docs/phase2/](docs/phase2/)
+
+> **Примечание:** Pod в статусе `ImagePullBackOff` — это ожидаемо! Docker образ ещё не существует и credentials не настроены. Исправим в Фазе 3-4.
 
 ## Фаза 3: Secrets
 - [ ] Doppler аккаунт (бесплатный Developer план)

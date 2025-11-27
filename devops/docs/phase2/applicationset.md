@@ -1,36 +1,22 @@
 # Phase 2: ApplicationSet
 
-**Docs:** https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/
+**Docs:** https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/
 
 ## Зачем
 
 Автоматически создаёт ArgoCD Application для каждого сервиса в `services/`.
 
-## Подход: Git Files Generator
+## Подход: Git Directory Generator
 
-Используем **Git Files Generator** вместо Directory Generator:
-- Каждый сервис имеет `config.json` с настройками
-- Можно задать индивидуальные параметры для каждого микросервиса
-- Гибче для разных конфигураций
+Используем **Git Directory Generator** — простой и правильный способ:
+- Сканирует папки в `services/*`
+- Автоматически исключает папки начинающиеся с `_` (например `_library`)
+- `.path.basename` = имя папки = имя приложения = namespace
+- `.path.path` = полный путь к Helm chart
 
-## Файлы
+## Файл
 
-```
-example-infrastructure/apps/templates/services-appset.yaml  # ApplicationSet
-example-deploy/services/example-api/config.json             # Конфиг сервиса
-```
-
-## config.json (в каждом сервисе)
-
-```json
-{
-  "name": "example-api",
-  "namespace": "example-api",
-  "project": "default"
-}
-```
-
-Можно расширять любыми полями для кастомизации.
+`example-infrastructure/apps/templates/services-appset.yaml`
 
 ## ApplicationSet манифест
 
@@ -49,20 +35,22 @@ spec:
     - git:
         repoURL: git@github.com:mshykhov/example-deploy.git
         revision: HEAD
-        files:
-          - path: "services/**/config.json"
+        directories:
+          - path: services/*
+          - path: services/_*
+            exclude: true
   template:
     metadata:
-      name: '{{ .name }}'
+      name: '{{ .path.basename }}'
     spec:
-      project: '{{ .project }}'
+      project: default
       source:
         repoURL: git@github.com:mshykhov/example-deploy.git
         targetRevision: HEAD
-        path: '{{ .path.path | dir }}'
+        path: '{{ .path.path }}'
       destination:
         server: https://kubernetes.default.svc
-        namespace: '{{ .namespace }}'
+        namespace: '{{ .path.basename }}'
       syncPolicy:
         automated:
           prune: true
@@ -71,16 +59,33 @@ spec:
           - CreateNamespace=true
 ```
 
-> **Важно:** В реальном файле (внутри Helm chart) Go template синтаксис экранируется:
-> `'{{` + `` ` `` + `{{ .name }}` + `` ` `` + `}}'`
+> **Важно:** В реальном файле (внутри Helm chart) Go template экранируется backticks:
+> `` '{{`{{ .path.basename }}`}}' ``
 
 ## Как работает
 
-1. Git Files Generator сканирует `services/**/config.json`
-2. Читает JSON и делает поля доступными как переменные
-3. `{{ .name }}` — имя из config.json
-4. `{{ .path.path | dir }}` — путь к папке сервиса
-5. Автоматический sync + создание namespace
+1. Git Directory Generator сканирует `services/*`
+2. Исключает папки `services/_*` (library charts)
+3. Для каждой папки создаёт Application
+4. `{{ .path.basename }}` = `example-api`
+5. `{{ .path.path }}` = `services/example-api`
+6. Автоматический sync + создание namespace
+
+## Добавление нового сервиса
+
+Просто создай папку в `services/`:
+
+```
+example-deploy/services/new-service/
+├── Chart.yaml
+├── values.yaml
+└── templates/
+    ├── deployment.yaml
+    ├── service.yaml
+    └── serviceaccount.yaml
+```
+
+ArgoCD автоматически подхватит и задеплоит.
 
 ## Sync Wave
 
@@ -91,4 +96,5 @@ Wave 100 — после всей инфраструктуры (MetalLB, Longhorn
 ```bash
 kubectl get applicationsets -n argocd
 kubectl get applications -n argocd
+kubectl get pods -n example-api
 ```
