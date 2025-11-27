@@ -1,4 +1,7 @@
 {
+  "interfaceFontSize": 14,
+  "textFontSize": 16,
+  "monospaceFontSize": 14,
   "attachmentFolderPath": "attachments",
   "newFileLocation": "folder",
   "newFileFolderPath": "00-inbox",
