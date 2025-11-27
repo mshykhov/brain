@@ -1,61 +1,65 @@
 #!/bin/bash
 # =============================================================================
 # K3s + Tools Setup Script - Phase 0
-# Установка k3s (без traefik, без servicelb) + kubectl + helm + k9s
-# Ubuntu 22.04
+# Installs k3s (without traefik, without servicelb) + kubectl + helm + k9s
+# Target: Ubuntu 22.04+ / Debian-based systems
+# Usage: sudo ./phase0-setup.sh
 # =============================================================================
 
 set -euo pipefail
 
-# Цвета
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Проверка root
+# Check if running as root
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        log_error "Скрипт должен запускаться от root (sudo)"
+        log_error "This script must be run as root (use sudo)"
         exit 1
     fi
 }
 
-# Проверка системы
+# Check system requirements
 check_system() {
-    log_info "Проверка системы..."
+    log_info "Checking system requirements..."
 
-    # Проверка Ubuntu
-    if ! grep -qi "ubuntu" /etc/os-release 2>/dev/null; then
-        log_warn "Не Ubuntu, но продолжаем..."
+    # Check if Debian-based
+    if ! command -v apt-get &> /dev/null; then
+        log_error "This script requires apt-get (Debian/Ubuntu)"
+        exit 1
     fi
 
-    # Проверка ресурсов
-    local mem_total=$(grep MemTotal /proc/meminfo | awk '{print int($2/1024/1024)}')
-    local cpu_count=$(nproc)
+    # Check resources
+    local mem_total
+    mem_total=$(awk '/MemTotal/ {print int($2/1024/1024)}' /proc/meminfo)
+    local cpu_count
+    cpu_count=$(nproc)
 
     log_info "CPU: ${cpu_count} cores, RAM: ${mem_total}GB"
 
     if [[ $mem_total -lt 4 ]]; then
-        log_warn "Рекомендуется минимум 4GB RAM (сейчас ${mem_total}GB)"
+        log_warn "Minimum 4GB RAM recommended (current: ${mem_total}GB)"
     fi
 
     if [[ $cpu_count -lt 2 ]]; then
-        log_warn "Рекомендуется минимум 2 CPU (сейчас ${cpu_count})"
+        log_warn "Minimum 2 CPUs recommended (current: ${cpu_count})"
     fi
 
-    log_success "Проверка системы завершена"
+    log_success "System check completed"
 }
 
-# Установка зависимостей
+# Install base dependencies
 install_deps() {
-    log_info "Установка базовых зависимостей..."
+    log_info "Installing base dependencies..."
 
     apt-get update -qq
     apt-get install -y -qq \
@@ -67,40 +71,42 @@ install_deps() {
         lsb-release \
         jq
 
-    log_success "Зависимости установлены"
+    log_success "Dependencies installed"
 }
 
-# Установка k3s
+# Install k3s
+# Docs: https://docs.k3s.io/installation/configuration
 install_k3s() {
-    log_info "Установка k3s (без traefik, без servicelb)..."
+    log_info "Installing k3s (without traefik, without servicelb)..."
 
-    # Проверка существующей установки
+    # Check for existing installation
     if command -v k3s &> /dev/null; then
-        log_warn "k3s уже установлен"
+        log_warn "k3s is already installed"
         k3s --version
-        read -p "Переустановить? (y/N): " reinstall
+        read -r -p "Reinstall? (y/N): " reinstall
         if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
-            log_info "Пропускаем установку k3s"
+            log_info "Skipping k3s installation"
             return 0
         fi
-        log_info "Удаляем старый k3s..."
+        log_info "Removing existing k3s..."
         /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
     fi
 
-    # Установка k3s с отключенными компонентами
-    # --disable traefik: не устанавливать встроенный Traefik
-    # --disable servicelb: не устанавливать встроенный LoadBalancer (Klipper)
-    # --write-kubeconfig-mode 644: доступ к kubeconfig без sudo
+    # Install k3s with disabled components
+    # --disable traefik: do not install built-in Traefik ingress controller
+    # --disable servicelb: do not install built-in LoadBalancer (Klipper)
+    # --write-kubeconfig-mode 644: allow kubeconfig access without sudo
+    # Docs: https://docs.k3s.io/cli/server
     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server \
         --disable=traefik \
         --disable=servicelb \
         --write-kubeconfig-mode=644" sh -
 
-    # Ожидание запуска
-    log_info "Ожидание запуска k3s..."
+    # Wait for k3s to start
+    log_info "Waiting for k3s to start..."
     sleep 10
 
-    # Проверка статуса
+    # Check status with timeout
     local max_attempts=30
     local attempt=0
     while [[ $attempt -lt $max_attempts ]]; do
@@ -112,210 +118,244 @@ install_k3s() {
     done
 
     if [[ $attempt -eq $max_attempts ]]; then
-        log_error "k3s не запустился за отведённое время"
+        log_error "k3s failed to start within timeout"
         journalctl -u k3s --no-pager -n 50
         exit 1
     fi
 
-    log_success "k3s установлен и запущен"
+    log_success "k3s installed and running"
     k3s --version
 }
 
-# Настройка kubectl
+# Setup kubectl configuration
 setup_kubectl() {
-    log_info "Настройка kubectl..."
+    log_info "Setting up kubectl..."
 
-    local kube_dir="/home/${SUDO_USER:-$USER}/.kube"
-    local user_home="/home/${SUDO_USER:-$USER}"
+    # Determine user home directory
+    local real_user="${SUDO_USER:-$USER}"
+    local user_home
+    user_home=$(getent passwd "$real_user" | cut -d: -f6)
+    local kube_dir="$user_home/.kube"
 
-    # Создание .kube директории
+    # Create .kube directory
     mkdir -p "$kube_dir"
 
-    # Копирование kubeconfig
+    # Copy kubeconfig
     cp /etc/rancher/k3s/k3s.yaml "$kube_dir/config"
 
-    # Права доступа
-    chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$kube_dir"
+    # Set permissions
+    chown -R "$real_user:$real_user" "$kube_dir"
     chmod 600 "$kube_dir/config"
 
-    # kubectl alias для удобства (если ещё нет)
+    # Create kubectl symlink if not exists
     if ! command -v kubectl &> /dev/null; then
         ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl 2>/dev/null || true
     fi
 
-    # Добавление KUBECONFIG в .bashrc если ещё нет
+    # Add KUBECONFIG to .bashrc if not present
     local bashrc="$user_home/.bashrc"
-    if ! grep -q "KUBECONFIG" "$bashrc" 2>/dev/null; then
-        echo "" >> "$bashrc"
-        echo "# Kubernetes config" >> "$bashrc"
-        echo "export KUBECONFIG=$kube_dir/config" >> "$bashrc"
+    if ! grep -q "KUBECONFIG=" "$bashrc" 2>/dev/null; then
+        {
+            echo ""
+            echo "# Kubernetes configuration"
+            echo "export KUBECONFIG=$kube_dir/config"
+        } >> "$bashrc"
     fi
 
-    # Добавление kubectl completion
+    # Add kubectl completion if not present
     if ! grep -q "kubectl completion" "$bashrc" 2>/dev/null; then
-        echo 'source <(kubectl completion bash)' >> "$bashrc"
-        echo 'alias k=kubectl' >> "$bashrc"
-        echo 'complete -o default -F __start_kubectl k' >> "$bashrc"
+        {
+            echo 'source <(kubectl completion bash)'
+            echo 'alias k=kubectl'
+            echo 'complete -o default -F __start_kubectl k'
+        } >> "$bashrc"
     fi
 
-    log_success "kubectl настроен"
+    log_success "kubectl configured"
 }
 
-# Установка Helm
+# Install Helm
+# Docs: https://helm.sh/docs/intro/install/
 install_helm() {
-    log_info "Установка Helm..."
+    log_info "Installing Helm..."
 
     if command -v helm &> /dev/null; then
-        log_warn "Helm уже установлен"
+        log_warn "Helm is already installed"
         helm version --short
         return 0
     fi
 
-    # Официальный способ установки Helm
+    # Official Helm installation script
+    # Source: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
     curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-    # Добавление completion
-    local bashrc="/home/${SUDO_USER:-$USER}/.bashrc"
+    # Add completion to bashrc
+    local real_user="${SUDO_USER:-$USER}"
+    local user_home
+    user_home=$(getent passwd "$real_user" | cut -d: -f6)
+    local bashrc="$user_home/.bashrc"
+
     if ! grep -q "helm completion" "$bashrc" 2>/dev/null; then
         echo 'source <(helm completion bash)' >> "$bashrc"
     fi
 
-    log_success "Helm установлен"
+    log_success "Helm installed"
     helm version --short
 }
 
-# Установка k9s
+# Install k9s
+# Docs: https://k9scli.io/topics/install/
 install_k9s() {
-    log_info "Установка k9s..."
+    log_info "Installing k9s..."
 
     if command -v k9s &> /dev/null; then
-        log_warn "k9s уже установлен"
+        log_warn "k9s is already installed"
         k9s version --short 2>/dev/null || k9s version
         return 0
     fi
 
-    # Определение архитектуры
-    local arch=$(uname -m)
+    # Detect architecture
+    local arch
+    arch=$(uname -m)
     case $arch in
         x86_64) arch="amd64" ;;
         aarch64) arch="arm64" ;;
-        *) log_error "Неподдерживаемая архитектура: $arch"; exit 1 ;;
+        armv7l) arch="arm" ;;
+        *) log_error "Unsupported architecture: $arch"; exit 1 ;;
     esac
 
-    # Получение последней версии
-    local latest_version=$(curl -sL https://api.github.com/repos/derailed/k9s/releases/latest | jq -r '.tag_name')
+    # Get latest version from GitHub API
+    local latest_version
+    latest_version=$(curl -sL https://api.github.com/repos/derailed/k9s/releases/latest | jq -r '.tag_name')
 
     if [[ -z "$latest_version" || "$latest_version" == "null" ]]; then
-        log_error "Не удалось получить версию k9s"
+        log_error "Failed to get k9s version from GitHub"
         exit 1
     fi
 
-    log_info "Скачивание k9s ${latest_version}..."
+    log_info "Downloading k9s ${latest_version}..."
 
     local download_url="https://github.com/derailed/k9s/releases/download/${latest_version}/k9s_Linux_${arch}.tar.gz"
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
 
-    # Скачивание и установка
-    curl -sL "$download_url" | tar xz -C /tmp k9s
-    mv /tmp/k9s /usr/local/bin/k9s
+    # Download and extract
+    if ! curl -sL "$download_url" -o "$tmp_dir/k9s.tar.gz"; then
+        log_error "Failed to download k9s"
+        rm -rf "$tmp_dir"
+        exit 1
+    fi
+
+    if ! tar xzf "$tmp_dir/k9s.tar.gz" -C "$tmp_dir" k9s; then
+        log_error "Failed to extract k9s"
+        rm -rf "$tmp_dir"
+        exit 1
+    fi
+
+    mv "$tmp_dir/k9s" /usr/local/bin/k9s
     chmod +x /usr/local/bin/k9s
+    rm -rf "$tmp_dir"
 
-    log_success "k9s установлен"
+    log_success "k9s installed"
     k9s version --short 2>/dev/null || k9s version
 }
 
-# Проверка установки
+# Verify installation
 verify_installation() {
-    log_info "Проверка установки..."
+    log_info "Verifying installation..."
 
     echo ""
     echo "=========================================="
-    echo -e "${GREEN}Установленные компоненты:${NC}"
+    echo -e "${GREEN}Installed components:${NC}"
     echo "=========================================="
 
     # k3s
     echo -n "k3s: "
-    k3s --version 2>/dev/null | head -1 || echo "НЕ УСТАНОВЛЕН"
+    k3s --version 2>/dev/null | head -1 || echo "NOT INSTALLED"
 
     # kubectl
     echo -n "kubectl: "
-    kubectl version --client --short 2>/dev/null || kubectl version --client 2>/dev/null | head -1 || echo "НЕ УСТАНОВЛЕН"
+    kubectl version --client 2>/dev/null | grep -oP 'Client Version: \K[^\s]+' || \
+    kubectl version --client 2>/dev/null | head -1 || echo "NOT INSTALLED"
 
     # helm
     echo -n "helm: "
-    helm version --short 2>/dev/null || echo "НЕ УСТАНОВЛЕН"
+    helm version --short 2>/dev/null || echo "NOT INSTALLED"
 
     # k9s
     echo -n "k9s: "
-    k9s version --short 2>/dev/null || echo "НЕ УСТАНОВЛЕН"
+    k9s version --short 2>/dev/null || echo "NOT INSTALLED"
 
     echo ""
     echo "=========================================="
-    echo -e "${GREEN}Статус кластера:${NC}"
+    echo -e "${GREEN}Cluster status:${NC}"
     echo "=========================================="
 
     # Nodes
-    kubectl get nodes -o wide 2>/dev/null || log_warn "Не удалось получить nodes"
+    kubectl get nodes -o wide 2>/dev/null || log_warn "Failed to get nodes"
 
     echo ""
 
-    # Проверка что traefik и servicelb отключены
-    echo "Проверка отключённых компонентов:"
+    # Verify disabled components
+    echo "Disabled components check:"
     if kubectl get deploy -n kube-system traefik &>/dev/null; then
-        log_warn "Traefik ВСЁ ЕЩЁ установлен (возможно старая установка)"
+        log_warn "Traefik is STILL installed (possibly from previous installation)"
     else
-        log_success "Traefik отключён"
+        log_success "Traefik is disabled"
     fi
 
-    if kubectl get ds -n kube-system svclb-traefik &>/dev/null; then
-        log_warn "ServiceLB ВСЁ ЕЩЁ установлен"
+    if kubectl get ds -n kube-system -l svccontroller.k3s.cattle.io/svcname &>/dev/null 2>&1; then
+        log_warn "ServiceLB is STILL installed"
     else
-        log_success "ServiceLB отключён"
+        log_success "ServiceLB is disabled"
     fi
 
     echo ""
     echo "=========================================="
-    echo -e "${GREEN}Pods в kube-system:${NC}"
+    echo -e "${GREEN}Pods in kube-system:${NC}"
     echo "=========================================="
     kubectl get pods -n kube-system
 }
 
-# Информация после установки
+# Print post-installation info
 print_info() {
-    local user_home="/home/${SUDO_USER:-$USER}"
+    local real_user="${SUDO_USER:-$USER}"
+    local user_home
+    user_home=$(getent passwd "$real_user" | cut -d: -f6)
 
     echo ""
     echo "=========================================="
-    echo -e "${GREEN}УСТАНОВКА ЗАВЕРШЕНА${NC}"
+    echo -e "${GREEN}INSTALLATION COMPLETE${NC}"
     echo "=========================================="
     echo ""
-    echo "Следующие шаги:"
+    echo "Next steps:"
     echo ""
-    echo "1. Перелогиньтесь или выполните:"
+    echo "1. Reload shell or run:"
     echo "   source ~/.bashrc"
     echo ""
-    echo "2. Проверьте кластер:"
+    echo "2. Verify cluster:"
     echo "   kubectl get nodes"
     echo "   kubectl get pods -A"
     echo ""
-    echo "3. Запустите k9s для визуального управления:"
+    echo "3. Launch k9s for visual management:"
     echo "   k9s"
     echo ""
-    echo "4. KUBECONFIG находится в:"
+    echo "4. KUBECONFIG location:"
     echo "   $user_home/.kube/config"
     echo ""
-    echo "Для Phase 1 (Core) нужно установить:"
+    echo "Phase 1 (Core) components to install:"
     echo "  - MetalLB (LoadBalancer)"
     echo "  - Longhorn (Storage)"
     echo "  - ArgoCD (GitOps)"
     echo ""
 }
 
-# Main
+# Main entry point
 main() {
     echo ""
     echo "=========================================="
     echo "  K3s + Tools Setup - Phase 0"
-    echo "  Ubuntu 22.04"
+    echo "  Target: Ubuntu 22.04+ / Debian"
     echo "=========================================="
     echo ""
 
