@@ -6,6 +6,7 @@
 - [x] VM (4 CPU, 8GB RAM, Ubuntu 22.04+)
 - [x] k3s без traefik и servicelb
 - [x] kubectl, helm, k9s
+- [x] Tailscale SSH
 - [x] GitHub репо: `example-infrastructure`
 - [x] GitHub репо: `example-deploy`
 - [x] GitHub репо: `example-api` (Kotlin/Spring Boot)
@@ -14,15 +15,15 @@
 curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/phase0-setup.sh | sudo bash
 ```
 
-Дока: [docs/phase0-k3s.md](docs/phase0-k3s.md)
+Дока: [docs/phase0/](docs/phase0/)
 
 ## Фаза 1: Core Infrastructure
-- [x] ArgoCD
-- [x] MetalLB
-- [x] Longhorn
-- [x] Tailscale SSH
+- [x] ArgoCD (ручная установка)
+- [x] SSH ключ + Deploy key для example-infrastructure
+- [x] MetalLB (wave 1-2)
+- [x] Longhorn (wave 3)
 
-Дока: [docs/phase1-argocd.md](docs/phase1-argocd.md)
+Дока: [docs/phase1/](docs/phase1/)
 
 | Компонент | Версия | Wave |
 |-----------|--------|------|
@@ -38,9 +39,11 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 - [ ] Закоммитить и запушить example-deploy
 - [ ] Закоммитить и запушить example-infrastructure
 
+Дока: [docs/phase2/](docs/phase2/)
+
 ## Фаза 3: Secrets
 - [ ] Doppler аккаунт (бесплатный Developer план)
-- [ ] Создать проект и environment в Doppler
+- [ ] Создать проект `example` и config `dev` в Doppler
 - [ ] External Secrets Operator (через ArgoCD)
 - [ ] Doppler Service Token → K8s Secret (вручную, один раз)
 - [ ] ClusterSecretStore → Doppler
