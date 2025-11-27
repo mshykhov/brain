@@ -16,3 +16,7 @@
 ## Новая область
 
 Скопировать `_template/` → переименовать.
+
+## Links
+
+Use standard markdown: `[text](path/file.md)`
