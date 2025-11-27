@@ -11,31 +11,78 @@
 
 ### Скрипт установки
 ```bash
-# На целевой VM:
 curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/phase0-setup.sh | sudo bash
-
-# Или локально:
-sudo ./scripts/phase0-setup.sh
 ```
 
-## Фаза 1: Core
+## Фаза 1: Core Infrastructure
 
-> Все компоненты автоматически устанавливаются через ArgoCD после bootstrap.
-> Манифесты: `infrastructure/apps/templates/`
+### Структура test-infrastructure репо
+```
+infrastructure/
+├── bootstrap/
+│   └── root.yaml              # Точка входа (apply вручную)
+├── apps/
+│   ├── Chart.yaml
+│   ├── values.yaml            # Список приложений
+│   └── templates/
+│       └── applications.yaml  # Генерирует Application CRs
+└── manifests/
+    └── metallb-config/
+        └── config.yaml        # IPAddressPool + L2Advertisement
+```
 
-### Ручные действия (один раз)
-- [ ] Установить ArgoCD: `kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.5/manifests/install.yaml`
-- [ ] Применить root Application: `kubectl apply -f infrastructure/bootstrap/root.yaml`
+### Как работает
+```
+1. kubectl apply -f bootstrap/root.yaml
+                    │
+                    ▼
+2. Root App синхронизирует apps/ Helm chart
+   → Генерирует Application CRs из values.yaml
+                    │
+                    ▼
+3. Child Applications устанавливают компоненты по sync-wave:
+   Wave 1: MetalLB (Helm)
+   Wave 2: MetalLB Config (manifests)
+   Wave 3: Longhorn (Helm)
+```
 
-### Автоматически через GitOps
-- [ ] MetalLB (v0.15.2) → `metallb.yaml` (sync-wave: 1)
-- [ ] MetalLB IPAddressPool → `metallb-config.yaml` (sync-wave: 2)
-- [ ] Longhorn (v1.10.1, требует K8s >= 1.25) → `longhorn.yaml` (sync-wave: 3)
+### Bootstrap (один раз)
+```bash
+# 1. Install ArgoCD
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.5/manifests/install.yaml
+
+# 2. Wait
+kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=300s
+
+# 3. Apply root
+kubectl apply -f bootstrap/root.yaml
+
+# 4. Password
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+```
+
+### Проверка
+- [ ] ArgoCD UI доступен (port-forward 8080:443)
+- [ ] Root Application: Synced
+- [ ] MetalLB: Running в metallb-system
+- [ ] MetalLB Config: IPAddressPool создан
+- [ ] Longhorn: Running в longhorn-system
+- [ ] `kubectl get svc` показывает EXTERNAL-IP для LoadBalancer
+
+### Компоненты Фазы 1
+
+| Компонент | Версия | Sync Wave | Docs |
+|-----------|--------|-----------|------|
+| MetalLB | 0.15.2 | 1 | https://metallb.io/ |
+| MetalLB Config | - | 2 | https://metallb.io/configuration/ |
+| Longhorn | 1.10.1 | 3 | https://longhorn.io/ |
+
+> **Note:** Longhorn требует Kubernetes >= 1.25
 
 ## Фаза 2: GitOps
-- [ ] SSH ключи для ArgoCD → GitHub
+- [ ] SSH ключи для ArgoCD → GitHub (private repos)
 - [ ] AppProjects (platform, applications)
-- [ ] Root Application (App of Apps)
 - [ ] Library Helm chart в test-deploy
 - [ ] ApplicationSet для сервисов
 - [ ] Задеплоить тестовое приложение через ArgoCD
@@ -77,6 +124,6 @@ sudo ./scripts/phase0-setup.sh
 - [ ] Метрики/логи собираются
 - [ ] Backup/restore работает
 
-## Фаза 9: Документация
-- [ ] Гайды в brain (краткие, по делу)
-- [ ] Перенос на mg-deploy / mg-infrastructure
+## Фаза 9: Production
+- [ ] Перенос на mg-infrastructure
+- [ ] Документация
