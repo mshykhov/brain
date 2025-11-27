@@ -1,5 +1,7 @@
 # План практики GitOps Infrastructure
 
+> **Принцип:** Всё управляется через GitOps. Вручную устанавливается ТОЛЬКО ArgoCD.
+
 ## Фаза 0: Подготовка
 - [ ] VM (4 CPU, 8GB RAM, Ubuntu 22.04)
 - [ ] k3s без traefik и servicelb → `scripts/phase0-setup.sh`
@@ -17,9 +19,18 @@ sudo ./scripts/phase0-setup.sh
 ```
 
 ## Фаза 1: Core
-- [ ] MetalLB + IPAddressPool
-- [ ] Longhorn
-- [ ] ArgoCD
+
+> Все компоненты автоматически устанавливаются через ArgoCD после bootstrap.
+> Манифесты: `infrastructure/apps/templates/`
+
+### Ручные действия (один раз)
+- [ ] Установить ArgoCD: `kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.5/manifests/install.yaml`
+- [ ] Применить root Application: `kubectl apply -f infrastructure/bootstrap/root.yaml`
+
+### Автоматически через GitOps
+- [ ] MetalLB (v0.15.2) → `metallb.yaml` (sync-wave: 1)
+- [ ] MetalLB IPAddressPool → `metallb-config.yaml` (sync-wave: 2)
+- [ ] Longhorn (v1.10.1, требует K8s >= 1.25) → `longhorn.yaml` (sync-wave: 3)
 
 ## Фаза 2: GitOps
 - [ ] SSH ключи для ArgoCD → GitHub
