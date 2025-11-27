@@ -1,0 +1,11 @@
+{
+  "attachmentFolderPath": "attachments",
+  "newFileLocation": "folder",
+  "newFileFolderPath": "00-inbox",
+  "alwaysUpdateLinks": true,
+  "showUnsupportedFiles": false,
+  "defaultViewMode": "source",
+  "strictLineBreaks": false,
+  "useMarkdownLinks": false,
+  "showFrontmatter": true
+}

@@ -1,0 +1,26 @@
+# Obsidian
+# Игнорируем workspace (открытые вкладки, позиция курсора) - это локальные настройки
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+
+# Кэш плагинов
+.obsidian/plugins/*/data.json
+
+# Obsidian Git plugin - не синхронизируем данные плагина между устройствами
+.obsidian/plugins/obsidian-git/data.json
+
+# Trash (корзина Obsidian)
+.trash/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Временные файлы
+*.tmp
+*.temp
+*~
+
+# Конфликты синхронизации
+*.sync-conflict-*
