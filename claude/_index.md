@@ -4,9 +4,9 @@
 
 ## Examples
 
-- [[examples/global-CLAUDE.md]] - `~/.claude/CLAUDE.md`
-- [[examples/commit.md]] - `~/.claude/commands/commit.md`
-- [[examples/settings.json]] - `~/.claude/settings.json`
+- [global-CLAUDE.md](examples/global-CLAUDE.md) - `~/.claude/CLAUDE.md`
+- [commit.md](examples/commit.md) - `~/.claude/commands/commit.md`
+- [settings.json](examples/settings.json) - `~/.claude/settings.json`
 
 ## Links
 
