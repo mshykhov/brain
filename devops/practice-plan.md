@@ -20,17 +20,23 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 ```
 infrastructure/
 ├── bootstrap/
-│   └── root.yaml                  # Точка входа (apply вручную)
+│   └── root.yaml                      # Точка входа (apply вручную)
 ├── apps/
 │   ├── Chart.yaml
-│   ├── values.yaml                # Общие настройки (server, repoURL)
+│   ├── values.yaml                    # Общие настройки
 │   └── templates/
-│       ├── metallb.yaml           # Wave 1: LoadBalancer
-│       ├── metallb-config.yaml    # Wave 2: IPAddressPool
-│       └── longhorn.yaml          # Wave 3: Storage
+│       ├── metallb.yaml               # Wave 1
+│       ├── metallb-config.yaml        # Wave 2
+│       └── longhorn.yaml              # Wave 3
+│       # Добавляй новые компоненты сюда:
+│       # ├── traefik.yaml             # Wave 4 (Фаза 4)
+│       # ├── tailscale.yaml           # Wave 5 (Фаза 4)
+│       # └── prometheus-stack.yaml    # Wave 10 (Фаза 6)
 └── manifests/
+    ├── argocd-config/
+    │   └── repository-secret.yaml     # Для private repos
     └── metallb-config/
-        └── config.yaml            # IPAddressPool + L2Advertisement
+        └── config.yaml                # IPAddressPool + L2Advertisement
 ```
 
 ### Как работает
@@ -49,19 +55,28 @@ Child Applications (по sync-wave):
 ```
 
 ### Bootstrap (один раз)
+
 ```bash
 # 1. Install ArgoCD
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.5/manifests/install.yaml
-
-# 2. Wait
 kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=300s
+
+# 2. Connect repo (только для private repos!)
+# Docs: https://argo-cd.readthedocs.io/en/stable/user-guide/private-repositories/
+ssh-keygen -t ed25519 -C "argocd" -f ~/.ssh/argocd-key -N ""
+cat ~/.ssh/argocd-key.pub  # → GitHub repo → Settings → Deploy keys
+# Отредактируй manifests/argocd-config/repository-secret.yaml и примени:
+kubectl apply -f manifests/argocd-config/repository-secret.yaml
 
 # 3. Apply root
 kubectl apply -f bootstrap/root.yaml
 
 # 4. Password
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d && echo
+
+# 5. Access UI
+kubectl port-forward svc/argocd-server -n argocd 8080:443
 ```
 
 ### Проверка
