@@ -2,10 +2,19 @@
 
 ## Фаза 0: Подготовка
 - [ ] VM (4 CPU, 8GB RAM, Ubuntu 22.04)
-- [ ] k3s без traefik и servicelb
-- [ ] kubectl, helm, k9s
+- [ ] k3s без traefik и servicelb → `scripts/phase0-setup.sh`
+- [ ] kubectl, helm, k9s → `scripts/phase0-setup.sh`
 - [ ] Тестовое приложение (простой REST API с /health, /metrics)
 - [ ] GitHub репо: `test-deploy`, `test-infrastructure`
+
+### Скрипт установки
+```bash
+# На целевой VM:
+curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/phase0-setup.sh | sudo bash
+
+# Или локально:
+sudo ./scripts/phase0-setup.sh
+```
 
 ## Фаза 1: Core
 - [ ] MetalLB + IPAddressPool
