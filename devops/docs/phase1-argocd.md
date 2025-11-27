@@ -34,6 +34,16 @@ kubectl apply -f example-infrastructure/bootstrap/root.yaml
 kubectl get applications -n argocd -w
 ```
 
+## ArgoCD UI
+
+```bash
+# Пароль
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d && echo
+
+# Port forward (доступ через Tailscale: https://<tailscale-ip>:8080)
+kubectl port-forward svc/argocd-server -n argocd 8080:443 --address 0.0.0.0
+```
+
 ## Результат
 
 ```bash
