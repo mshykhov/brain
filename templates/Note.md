@@ -1,9 +1,7 @@
 ---
 created: {{date}}
-tags:
-  -
+tags: []
 ---
 
 # {{title}}
-
 

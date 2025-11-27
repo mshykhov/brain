@@ -4,7 +4,7 @@
   "monospaceFontSize": 14,
   "attachmentFolderPath": "attachments",
   "newFileLocation": "folder",
-  "newFileFolderPath": "00-inbox",
+  "newFileFolderPath": "inbox",
   "alwaysUpdateLinks": true,
   "showUnsupportedFiles": false,
   "defaultViewMode": "source",
