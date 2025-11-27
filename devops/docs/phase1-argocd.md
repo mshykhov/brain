@@ -11,9 +11,9 @@ kubectl wait --for=condition=available deployment/argocd-server -n argocd --time
 # 2. SSH ключ
 ssh-keygen -t ed25519 -C "argocd" -f ~/.ssh/argocd -N ""
 cat ~/.ssh/argocd.pub
-# → GitHub repo → Settings → Deploy keys → Add
+# → GitHub repo → Settings → Deploy keys → Add (read-only)
 
-# 3. Секрет
+# 3. Секрет для ArgoCD
 kubectl create secret generic repo-example-infrastructure \
   --from-literal=type=git \
   --from-literal=url=git@github.com:mshykhov/example-infrastructure.git \
@@ -21,10 +21,16 @@ kubectl create secret generic repo-example-infrastructure \
   -n argocd
 kubectl label secret repo-example-infrastructure argocd.argoproj.io/secret-type=repository -n argocd
 
-# 4. GitOps
-kubectl apply -f https://raw.githubusercontent.com/mshykhov/example-infrastructure/main/bootstrap/root.yaml
+# 4. Склонировать репо
+sudo apt install -y git
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/argocd
+git clone git@github.com:mshykhov/example-infrastructure.git
 
-# 5. Проверка
+# 5. GitOps
+kubectl apply -f example-infrastructure/bootstrap/root.yaml
+
+# 6. Проверка
 kubectl get applications -n argocd -w
 ```
 
