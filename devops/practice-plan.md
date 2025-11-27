@@ -7,7 +7,7 @@
 - [ ] k3s без traefik и servicelb → `scripts/phase0-setup.sh`
 - [ ] kubectl, helm, k9s → `scripts/phase0-setup.sh`
 - [ ] Тестовое приложение (простой REST API с /health, /metrics)
-- [ ] GitHub репо: `test-deploy`, `test-infrastructure`
+- [ ] GitHub репо: `test-deploy`, `example-infrastructure`
 
 ### Скрипт установки
 ```bash
@@ -16,7 +16,7 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 
 ## Фаза 1: Core Infrastructure
 
-### Структура test-infrastructure репо
+### Структура example-infrastructure репо
 ```
 infrastructure/
 ├── bootstrap/

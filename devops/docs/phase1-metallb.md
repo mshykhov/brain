@@ -8,7 +8,7 @@
 
 LoadBalancer для bare-metal. Без него `type: LoadBalancer` будет вечно в `<pending>`.
 
-## Файлы в test-infrastructure
+## Файлы в example-infrastructure
 
 ```
 apps/templates/metallb.yaml        # Application (Helm chart)

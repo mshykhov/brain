@@ -8,7 +8,7 @@
 
 Distributed storage для Kubernetes. Даёт PersistentVolumes на bare-metal.
 
-## Файлы в test-infrastructure
+## Файлы в example-infrastructure
 
 ```
 apps/templates/longhorn.yaml  # Application (Helm chart)

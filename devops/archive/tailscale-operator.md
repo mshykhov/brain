@@ -63,7 +63,7 @@ tailscale configure kubeconfig tailscale-operator
 kubectl get nodes
 ```
 
-## Файлы в test-infrastructure
+## Файлы в example-infrastructure
 
 ```
 apps/templates/tailscale-operator.yaml  # Helm chart (Wave 4)
