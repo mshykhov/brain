@@ -2,26 +2,21 @@
 
 LoadBalancer для bare-metal Kubernetes.
 
-**Docs:** https://metallb.io/installation/
+**Docs:** https://metallb.io/
 
-## Установка
+## Способ установки
 
-```bash
-# 1. Применить манифест (v0.14.9)
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
+**GitOps через ArgoCD** (не руками!)
 
-# 2. Дождаться готовности
-kubectl wait --for=condition=ready pod -l app=metallb -n metallb-system --timeout=120s
+Файлы:
+- `infrastructure/apps/templates/metallb.yaml` — Application для Helm chart
+- `infrastructure/apps/templates/metallb-config.yaml` — Application для конфигурации
+- `infrastructure/base/metallb/config.yaml` — IPAddressPool + L2Advertisement
 
-# 3. Проверить
-kubectl get pods -n metallb-system
-```
+## Конфигурация
 
-## Конфигурация IPAddressPool
-
-```bash
-# Применить конфиг (заменить IP на свою подсеть)
-kubectl apply -f - <<'EOF'
+```yaml
+# infrastructure/base/metallb/config.yaml
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:
@@ -29,7 +24,7 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-    - 192.168.8.240-192.168.8.250
+    - 192.168.8.240-192.168.8.250  # Замени на свою подсеть!
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
@@ -39,29 +34,18 @@ metadata:
 spec:
   ipAddressPools:
     - default-pool
-EOF
 ```
 
 ## Проверка
 
 ```bash
-# Создать тестовый сервис
-kubectl create deployment nginx-test --image=nginx
-kubectl expose deployment nginx-test --port=80 --type=LoadBalancer
-
-# Проверить что IP назначился
-kubectl get svc nginx-test
-
-# Тест
-curl http://192.168.8.240
-
-# Удалить тест
-kubectl delete deployment nginx-test
-kubectl delete svc nginx-test
+kubectl get pods -n metallb-system
+kubectl get ipaddresspool -n metallb-system
+kubectl get svc -A | grep LoadBalancer
 ```
 
 ## Timeline
 
 | Дата | Действие |
 |------|----------|
-| 2024-11-27 | Установка v0.14.9, IPAddressPool 192.168.8.240-250 |
+| 2024-11-27 | Создана GitOps структура, Helm chart v0.14.9 |

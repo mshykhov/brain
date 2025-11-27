@@ -4,31 +4,43 @@
 
 **VM:** Ubuntu 24.04, 192.168.8.228
 **Дата начала:** 2024-11-27
+**Репо:** https://github.com/mshykhov/test-monorepo
 
-## Quick Start (Phase 0)
+## Bootstrap (Phase 0 + 1)
 
+### Phase 0: k3s + tools
 ```bash
-# На VM (Ubuntu 22.04+)
 curl -O https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/phase0-setup.sh
-chmod +x phase0-setup.sh
-sudo ./phase0-setup.sh
+chmod +x phase0-setup.sh && sudo ./phase0-setup.sh
 ```
 
-Или через scp:
+### Phase 1: ArgoCD + GitOps
 ```bash
-# С локальной машины
-scp phase0-setup.sh user@192.168.8.228:~/
-ssh user@192.168.8.228 "chmod +x phase0-setup.sh && sudo ./phase0-setup.sh"
+# 1. Установить ArgoCD
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.2/manifests/install.yaml
+
+# 2. Дождаться готовности
+kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=180s
+
+# 3. Применить root Application (App-of-Apps)
+kubectl apply -f https://raw.githubusercontent.com/mshykhov/test-monorepo/main/infrastructure/bootstrap/root.yaml
+
+# 4. Получить пароль
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d && echo
 ```
+
+После этого ArgoCD автоматически задеплоит MetalLB, Longhorn и всё остальное из Git.
 
 ## Phases
 
-| Phase | Компоненты | Статус |
-|-------|-----------|--------|
-| 0 | k3s, kubectl, helm, k9s | Done |
-| 1 | MetalLB, Longhorn, ArgoCD | In Progress |
-| 2 | GitOps (SSH, AppProjects, App-of-Apps) | Pending |
-| 3 | Secrets (Doppler, ESO) | Pending |
+| Phase | Компоненты | Способ | Статус |
+|-------|-----------|--------|--------|
+| 0 | k3s, kubectl, helm, k9s | Скрипт | Done |
+| 1 | ArgoCD (bootstrap) | kubectl | In Progress |
+| 1 | MetalLB, Longhorn | GitOps | Pending |
+| 2 | SSH keys, App-of-Apps | GitOps | Pending |
+| 3 | Secrets (Doppler, ESO) | GitOps | Pending |
 | 4 | Networking (Traefik, Tailscale) | Pending |
 | 5 | Data (PostgreSQL, Kafka) | Pending |
 | 6 | Observability (Prometheus, Loki) | Pending |
