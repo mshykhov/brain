@@ -20,30 +20,32 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 ```
 infrastructure/
 ├── bootstrap/
-│   └── root.yaml              # Точка входа (apply вручную)
+│   └── root.yaml                  # Точка входа (apply вручную)
 ├── apps/
 │   ├── Chart.yaml
-│   ├── values.yaml            # Список приложений
+│   ├── values.yaml                # Общие настройки (server, repoURL)
 │   └── templates/
-│       └── applications.yaml  # Генерирует Application CRs
+│       ├── metallb.yaml           # Wave 1: LoadBalancer
+│       ├── metallb-config.yaml    # Wave 2: IPAddressPool
+│       └── longhorn.yaml          # Wave 3: Storage
 └── manifests/
     └── metallb-config/
-        └── config.yaml        # IPAddressPool + L2Advertisement
+        └── config.yaml            # IPAddressPool + L2Advertisement
 ```
 
 ### Как работает
 ```
-1. kubectl apply -f bootstrap/root.yaml
-                    │
-                    ▼
-2. Root App синхронизирует apps/ Helm chart
-   → Генерирует Application CRs из values.yaml
-                    │
-                    ▼
-3. Child Applications устанавливают компоненты по sync-wave:
-   Wave 1: MetalLB (Helm)
-   Wave 2: MetalLB Config (manifests)
-   Wave 3: Longhorn (Helm)
+kubectl apply -f bootstrap/root.yaml
+              │
+              ▼
+Root Application синхронизирует apps/ Helm chart
+(каждый файл в templates/ = отдельное Application)
+              │
+              ▼
+Child Applications (по sync-wave):
+  Wave 1: metallb.yaml       → Helm chart
+  Wave 2: metallb-config.yaml → Raw manifests
+  Wave 3: longhorn.yaml      → Helm chart
 ```
 
 ### Bootstrap (один раз)
