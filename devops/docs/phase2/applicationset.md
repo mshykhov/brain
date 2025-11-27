@@ -4,13 +4,35 @@
 
 ## Зачем
 
-Автоматически создаёт ArgoCD Application для каждой папки в `services/`.
+Автоматически создаёт ArgoCD Application для каждого сервиса в `services/`.
 
-## Файл
+## Подход: Git Files Generator
 
-`example-infrastructure/apps/templates/services-appset.yaml`
+Используем **Git Files Generator** вместо Directory Generator:
+- Каждый сервис имеет `config.json` с настройками
+- Можно задать индивидуальные параметры для каждого микросервиса
+- Гибче для разных конфигураций
 
-## Манифест
+## Файлы
+
+```
+example-infrastructure/apps/templates/services-appset.yaml  # ApplicationSet
+example-deploy/services/example-api/config.json             # Конфиг сервиса
+```
+
+## config.json (в каждом сервисе)
+
+```json
+{
+  "name": "example-api",
+  "namespace": "example-api",
+  "project": "default"
+}
+```
+
+Можно расширять любыми полями для кастомизации.
+
+## ApplicationSet манифест
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -19,7 +41,7 @@ metadata:
   name: services
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-wave: "100"
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
@@ -27,22 +49,20 @@ spec:
     - git:
         repoURL: git@github.com:mshykhov/example-deploy.git
         revision: HEAD
-        directories:
-          - path: services/*
-          - path: services/_*
-            exclude: true  # Исключить _library и подобные
+        files:
+          - path: "services/**/config.json"
   template:
     metadata:
-      name: '{{.path.basename}}'
+      name: '{{ .name }}'
     spec:
-      project: default
+      project: '{{ .project }}'
       source:
         repoURL: git@github.com:mshykhov/example-deploy.git
         targetRevision: HEAD
-        path: '{{.path.path}}'
+        path: '{{ .path.path | dir }}'
       destination:
         server: https://kubernetes.default.svc
-        namespace: '{{.path.basename}}'
+        namespace: '{{ .namespace }}'
       syncPolicy:
         automated:
           prune: true
@@ -51,16 +71,20 @@ spec:
           - CreateNamespace=true
 ```
 
+> **Важно:** В реальном файле (внутри Helm chart) Go template синтаксис экранируется:
+> `'{{` + `` ` `` + `{{ .name }}` + `` ` `` + `}}'`
+
 ## Как работает
 
-1. Git Generator сканирует `services/*` в example-deploy
-2. Для каждой папки (кроме `_*`) создаёт Application
-3. `{{.path.basename}}` = имя папки = имя приложения = namespace
-4. Автоматический sync + создание namespace
+1. Git Files Generator сканирует `services/**/config.json`
+2. Читает JSON и делает поля доступными как переменные
+3. `{{ .name }}` — имя из config.json
+4. `{{ .path.path | dir }}` — путь к папке сервиса
+5. Автоматический sync + создание namespace
 
 ## Sync Wave
 
-Wave 10 — после всей инфраструктуры (MetalLB, Longhorn, ESO).
+Wave 100 — после всей инфраструктуры (MetalLB, Longhorn, ESO).
 
 ## Проверка
 
