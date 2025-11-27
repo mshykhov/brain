@@ -5,6 +5,22 @@
 **VM:** Ubuntu 24.04, 192.168.8.228
 **Дата начала:** 2024-11-27
 
+## Quick Start (Phase 0)
+
+```bash
+# На VM (Ubuntu 22.04+)
+curl -O https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/phase0-setup.sh
+chmod +x phase0-setup.sh
+sudo ./phase0-setup.sh
+```
+
+Или через scp:
+```bash
+# С локальной машины
+scp phase0-setup.sh user@192.168.8.228:~/
+ssh user@192.168.8.228 "chmod +x phase0-setup.sh && sudo ./phase0-setup.sh"
+```
+
 ## Phases
 
 | Phase | Компоненты | Статус |
