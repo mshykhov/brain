@@ -69,7 +69,7 @@ install_deps() {
     apt-get update -qq
     log_success "Package lists updated"
 
-    log_info "Installing packages: curl wget apt-transport-https ca-certificates gnupg lsb-release jq"
+    log_info "Installing packages: curl wget apt-transport-https ca-certificates gnupg lsb-release jq open-iscsi nfs-common"
     apt-get install -y -qq \
         curl \
         wget \
@@ -77,7 +77,13 @@ install_deps() {
         ca-certificates \
         gnupg \
         lsb-release \
-        jq
+        jq \
+        open-iscsi \
+        nfs-common
+
+    # Enable iscsid for Longhorn
+    # Docs: https://longhorn.io/docs/1.10.1/deploy/install/#installation-requirements
+    systemctl enable iscsid --now
 
     log_success "Dependencies installed"
 }
