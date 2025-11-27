@@ -17,88 +17,11 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Spinner characters
-SPINNER_CHARS='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
-log_step() { echo -e "\n${BOLD}${CYAN}>>> $1${NC}"; }
-
-# Spinner for long-running operations
-# Usage: run_with_spinner "message" command args...
-run_with_spinner() {
-    local msg="$1"
-    shift
-    local pid
-    local i=0
-
-    # Start command in background
-    "$@" &>/dev/null &
-    pid=$!
-
-    # Show spinner while command runs
-    printf "${BLUE}[....]${NC} %s " "$msg"
-    while kill -0 "$pid" 2>/dev/null; do
-        printf "\r${BLUE}[${SPINNER_CHARS:i++%${#SPINNER_CHARS}:1}]${NC} %s " "$msg"
-        sleep 0.1
-    done
-
-    # Check exit status
-    if wait "$pid"; then
-        printf "\r${GREEN}[OK]${NC} %s\n" "$msg"
-        return 0
-    else
-        printf "\r${RED}[FAIL]${NC} %s\n" "$msg"
-        return 1
-    fi
-}
-
-# Progress bar for waiting operations
-# Usage: wait_with_progress "message" seconds
-wait_with_progress() {
-    local msg="$1"
-    local total="$2"
-    local elapsed=0
-    local width=30
-
-    while [[ $elapsed -lt $total ]]; do
-        local progress=$((elapsed * width / total))
-        local remaining=$((width - progress))
-        local bar=$(printf "%${progress}s" | tr ' ' '█')
-        local empty=$(printf "%${remaining}s" | tr ' ' '░')
-        printf "\r${BLUE}[INFO]${NC} %s [%s%s] %ds/%ds " "$msg" "$bar" "$empty" "$elapsed" "$total"
-        sleep 1
-        ((elapsed++))
-    done
-    printf "\r${GREEN}[OK]${NC} %s [$(printf "%${width}s" | tr ' ' '█')] %ds    \n" "$msg" "$total"
-}
-
-# Waiting spinner with timeout check
-# Usage: wait_for_condition "message" "condition_command" max_seconds
-wait_for_condition() {
-    local msg="$1"
-    local condition="$2"
-    local max_seconds="$3"
-    local elapsed=0
-    local i=0
-
-    printf "${BLUE}[....]${NC} %s (timeout: %ds) " "$msg" "$max_seconds"
-
-    while [[ $elapsed -lt $max_seconds ]]; do
-        if eval "$condition" &>/dev/null; then
-            printf "\r${GREEN}[OK]${NC} %s (%ds)                    \n" "$msg" "$elapsed"
-            return 0
-        fi
-        printf "\r${BLUE}[${SPINNER_CHARS:i++%${#SPINNER_CHARS}:1}]${NC} %s (%ds/%ds) " "$msg" "$elapsed" "$max_seconds"
-        sleep 1
-        ((elapsed++))
-    done
-
-    printf "\r${RED}[FAIL]${NC} %s (timeout after %ds)\n" "$msg" "$max_seconds"
-    return 1
-}
+log_step() { echo -e "\n${BOLD}${CYAN}=== $1 ===${NC}"; }
 
 # Check if running as root
 check_root() {
@@ -144,27 +67,19 @@ install_deps() {
 
     log_info "Updating package lists..."
     apt-get update -qq
+    log_success "Package lists updated"
 
-    local packages=(curl wget apt-transport-https ca-certificates gnupg lsb-release jq)
-    local total=${#packages[@]}
-    local current=0
+    log_info "Installing packages: curl wget apt-transport-https ca-certificates gnupg lsb-release jq"
+    apt-get install -y -qq \
+        curl \
+        wget \
+        apt-transport-https \
+        ca-certificates \
+        gnupg \
+        lsb-release \
+        jq
 
-    for pkg in "${packages[@]}"; do
-        ((current++))
-        if dpkg -l "$pkg" &>/dev/null; then
-            printf "${GREEN}[OK]${NC} [%d/%d] %s (already installed)\n" "$current" "$total" "$pkg"
-        else
-            printf "${BLUE}[....]${NC} [%d/%d] Installing %s... " "$current" "$total" "$pkg"
-            if apt-get install -y -qq "$pkg" &>/dev/null; then
-                printf "\r${GREEN}[OK]${NC} [%d/%d] %s installed            \n" "$current" "$total" "$pkg"
-            else
-                printf "\r${RED}[FAIL]${NC} [%d/%d] %s failed            \n" "$current" "$total" "$pkg"
-                exit 1
-            fi
-        fi
-    done
-
-    log_success "All dependencies installed"
+    log_success "Dependencies installed"
 }
 
 # Install k3s
@@ -190,33 +105,41 @@ install_k3s() {
     echo "  --disable=servicelb    (will use MetalLB)"
     echo "  --write-kubeconfig-mode=644"
 
-    # Download and install k3s
-    log_info "Downloading k3s installation script..."
-    local tmp_script
-    tmp_script=$(mktemp)
+    # Install k3s with disabled components
+    # --disable traefik: do not install built-in Traefik ingress controller
+    # --disable servicelb: do not install built-in LoadBalancer (Klipper)
+    # --write-kubeconfig-mode 644: allow kubeconfig access without sudo
+    # Docs: https://docs.k3s.io/cli/server
+    log_info "Downloading and installing k3s (this may take 1-2 minutes)..."
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server \
+        --disable=traefik \
+        --disable=servicelb \
+        --write-kubeconfig-mode=644" sh -
 
-    if ! curl -sfL https://get.k3s.io -o "$tmp_script"; then
-        log_error "Failed to download k3s installation script"
-        rm -f "$tmp_script"
+    # Wait for k3s to start
+    log_info "Waiting for k3s to start..."
+    sleep 5
+
+    # Check status with timeout
+    local max_attempts=30
+    local attempt=0
+    while [[ $attempt -lt $max_attempts ]]; do
+        if k3s kubectl get nodes &>/dev/null; then
+            break
+        fi
+        echo -n "."
+        sleep 2
+        ((attempt++))
+    done
+    echo ""
+
+    if [[ $attempt -eq $max_attempts ]]; then
+        log_error "k3s failed to start within timeout (60s)"
+        journalctl -u k3s --no-pager -n 50
         exit 1
     fi
-    log_success "Installation script downloaded"
 
-    log_info "Installing k3s (this may take 1-2 minutes)..."
-    # Run installation with visible output for progress
-    INSTALL_K3S_EXEC="server --disable=traefik --disable=servicelb --write-kubeconfig-mode=644" \
-        bash "$tmp_script"
-    rm -f "$tmp_script"
-
-    # Wait for k3s to be ready
-    if ! wait_for_condition "Waiting for k3s to be ready" "k3s kubectl get nodes" 60; then
-        log_error "k3s failed to start within timeout"
-        log_info "Checking logs..."
-        journalctl -u k3s --no-pager -n 30
-        exit 1
-    fi
-
-    log_success "k3s installed and running"
+    log_success "k3s installed and running (took ~$((attempt * 2 + 5))s)"
     k3s --version | head -1
 }
 
@@ -286,20 +209,10 @@ install_helm() {
         return 0
     fi
 
-    log_info "Downloading Helm installation script..."
-    local tmp_script
-    tmp_script=$(mktemp)
-
-    if ! curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 -o "$tmp_script"; then
-        log_error "Failed to download Helm installation script"
-        rm -f "$tmp_script"
-        exit 1
-    fi
-    log_success "Installation script downloaded"
-
-    log_info "Installing Helm..."
-    bash "$tmp_script"
-    rm -f "$tmp_script"
+    # Official Helm installation script
+    # Source: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    log_info "Downloading and installing Helm..."
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
     # Add completion to bashrc
     local real_user="${SUDO_USER:-$USER}"
@@ -312,7 +225,8 @@ install_helm() {
         log_success "Added helm completion to .bashrc"
     fi
 
-    log_success "Helm installed: $(helm version --short)"
+    log_success "Helm installed"
+    helm version --short
 }
 
 # Install k9s
@@ -352,7 +266,7 @@ install_k9s() {
     local tmp_dir
     tmp_dir=$(mktemp -d)
 
-    # Download with progress
+    # Download with progress bar
     log_info "Downloading k9s ${latest_version}..."
     if ! curl -L --progress-bar "$download_url" -o "$tmp_dir/k9s.tar.gz"; then
         log_error "Failed to download k9s"
@@ -371,7 +285,8 @@ install_k9s() {
     chmod +x /usr/local/bin/k9s
     rm -rf "$tmp_dir"
 
-    log_success "k9s installed: $(k9s version --short 2>/dev/null || k9s version | head -1)"
+    log_success "k9s installed"
+    k9s version --short 2>/dev/null || k9s version | head -1
 }
 
 # Verify installation
@@ -379,44 +294,31 @@ verify_installation() {
     log_step "Step 7/7: Verifying installation"
 
     echo ""
-    echo "┌──────────────────────────────────────────┐"
-    echo "│         Installed Components             │"
-    echo "├──────────────────────────────────────────┤"
+    echo "Installed components:"
+    echo "---------------------"
 
     # k3s
-    printf "│ k3s:     "
-    local k3s_ver
-    k3s_ver=$(k3s --version 2>/dev/null | head -1 | awk '{print $3}') || k3s_ver="NOT INSTALLED"
-    printf "%-30s │\n" "$k3s_ver"
+    echo -n "  k3s:     "
+    k3s --version 2>/dev/null | head -1 | awk '{print $3}' || echo "NOT INSTALLED"
 
     # kubectl
-    printf "│ kubectl: "
-    local kubectl_ver
-    kubectl_ver=$(kubectl version --client 2>/dev/null | grep -oP 'v\d+\.\d+\.\d+' | head -1) || kubectl_ver="NOT INSTALLED"
-    printf "%-30s │\n" "$kubectl_ver"
+    echo -n "  kubectl: "
+    kubectl version --client 2>/dev/null | grep -oP 'v\d+\.\d+\.\d+' | head -1 || echo "NOT INSTALLED"
 
     # helm
-    printf "│ helm:    "
-    local helm_ver
-    helm_ver=$(helm version --short 2>/dev/null) || helm_ver="NOT INSTALLED"
-    printf "%-30s │\n" "$helm_ver"
+    echo -n "  helm:    "
+    helm version --short 2>/dev/null || echo "NOT INSTALLED"
 
     # k9s
-    printf "│ k9s:     "
-    local k9s_ver
-    k9s_ver=$(k9s version --short 2>/dev/null) || k9s_ver="NOT INSTALLED"
-    printf "%-30s │\n" "$k9s_ver"
+    echo -n "  k9s:     "
+    k9s version --short 2>/dev/null || echo "NOT INSTALLED"
 
-    echo "└──────────────────────────────────────────┘"
     echo ""
-
-    # Cluster status
     echo "Cluster status:"
+    echo "---------------"
     kubectl get nodes -o wide 2>/dev/null || log_warn "Failed to get nodes"
 
     echo ""
-
-    # Verify disabled components
     echo "Disabled components check:"
     if kubectl get deploy -n kube-system traefik &>/dev/null; then
         log_warn "Traefik is STILL installed (possibly from previous installation)"
@@ -442,41 +344,39 @@ print_info() {
     user_home=$(getent passwd "$real_user" | cut -d: -f6)
 
     echo ""
-    echo "╔══════════════════════════════════════════╗"
-    echo "║       INSTALLATION COMPLETE              ║"
-    echo "╚══════════════════════════════════════════╝"
+    echo "============================================"
+    echo "         INSTALLATION COMPLETE"
+    echo "============================================"
     echo ""
     echo "Next steps:"
     echo ""
     echo "  1. Reload shell or run:"
-    echo "     ${CYAN}source ~/.bashrc${NC}"
+    echo "     source ~/.bashrc"
     echo ""
     echo "  2. Verify cluster:"
-    echo "     ${CYAN}kubectl get nodes${NC}"
-    echo "     ${CYAN}kubectl get pods -A${NC}"
+    echo "     kubectl get nodes"
+    echo "     kubectl get pods -A"
     echo ""
     echo "  3. Launch k9s for visual management:"
-    echo "     ${CYAN}k9s${NC}"
+    echo "     k9s"
     echo ""
     echo "  4. KUBECONFIG location:"
-    echo "     ${CYAN}$user_home/.kube/config${NC}"
+    echo "     $user_home/.kube/config"
     echo ""
-    echo "┌──────────────────────────────────────────┐"
-    echo "│  Phase 1 (Core) - Next to install:      │"
-    echo "│    • MetalLB (LoadBalancer)              │"
-    echo "│    • Longhorn (Storage)                  │"
-    echo "│    • ArgoCD (GitOps)                     │"
-    echo "└──────────────────────────────────────────┘"
+    echo "Phase 1 (Core) - Next to install:"
+    echo "  - MetalLB (LoadBalancer)"
+    echo "  - Longhorn (Storage)"
+    echo "  - ArgoCD (GitOps)"
     echo ""
 }
 
 # Main entry point
 main() {
     echo ""
-    echo "╔══════════════════════════════════════════╗"
-    echo "║     K3s + Tools Setup - Phase 0         ║"
-    echo "║     Target: Ubuntu 22.04+ / Debian      ║"
-    echo "╚══════════════════════════════════════════╝"
+    echo "============================================"
+    echo "     K3s + Tools Setup - Phase 0"
+    echo "     Target: Ubuntu 22.04+ / Debian"
+    echo "============================================"
     echo ""
 
     local start_time=$SECONDS
