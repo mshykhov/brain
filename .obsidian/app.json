@@ -11,5 +11,6 @@
   "strictLineBreaks": false,
   "useMarkdownLinks": false,
   "showFrontmatter": true,
-  "newLinkFormat": "shortest"
+  "newLinkFormat": "shortest",
+  "promptDelete": false
 }
