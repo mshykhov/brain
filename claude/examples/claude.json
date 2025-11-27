@@ -1,0 +1,36 @@
+{
+  "mcpServers": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_GITHUB_PAT>"
+      }
+    },
+    "fetch": {
+      "type": "stdio",
+      "command": "/home/<user>/.local/bin/uvx",
+      "args": ["mcp-server-fetch"],
+      "env": {}
+    },
+    "memory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "mcp-knowledge-graph"],
+      "env": {}
+    },
+    "sequential-thinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "mcp-sequentialthinking-tools"],
+      "env": {}
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "<YOUR_CONTEXT7_API_KEY>"
+      }
+    }
+  }
+}
