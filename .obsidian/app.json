@@ -6,9 +6,10 @@
   "newFileLocation": "folder",
   "newFileFolderPath": "inbox",
   "alwaysUpdateLinks": true,
-  "showUnsupportedFiles": false,
+  "showUnsupportedFiles": true,
   "defaultViewMode": "source",
   "strictLineBreaks": false,
   "useMarkdownLinks": false,
-  "showFrontmatter": true
+  "showFrontmatter": true,
+  "newLinkFormat": "shortest"
 }
