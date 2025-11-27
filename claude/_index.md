@@ -2,13 +2,12 @@
 
 Конфигурация и примеры для Claude Code CLI.
 
-## Структура
+## Examples
 
-- `examples/` - примеры конфигураций и команд
-  - `global-claude-md.md` - глобальные настройки (~/.claude/CLAUDE.md)
-  - `commit-command.md` - команда /commit
-  - `project-claude-md.md` - пример проектного CLAUDE.md
+- [[examples/global-CLAUDE.md]] - `~/.claude/CLAUDE.md`
+- [[examples/commit.md]] - `~/.claude/commands/commit.md`
+- [[examples/settings.json]] - `~/.claude/settings.json`
 
-## Документация
+## Links
 
 - [Claude Code Docs](https://docs.anthropic.com/claude-code)

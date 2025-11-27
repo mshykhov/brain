@@ -1,8 +1,3 @@
-# Commit Command
-
-Location: `~/.claude/commands/commit.md`
-
-```markdown
 ---
 allowed-tools:
   - Bash(git add:*)
@@ -91,6 +86,28 @@ Good commit messages:
 - fix: resolve memory leak in rendering process
 - docs: update API documentation with new endpoints
 - refactor: simplify error handling logic in parser
+- fix: resolve linter warnings in component files
+- chore: improve developer tooling setup process
+- feat: implement business logic for transaction validation
+- fix: address minor styling inconsistency in header
+- fix: patch critical security vulnerability in auth flow
+- style: reorganize component structure for better readability
+- refactor: remove deprecated legacy code
+- feat: add input validation for user registration form
+- fix: resolve failing CI pipeline tests
+- feat: implement analytics tracking for user engagement
+- security: strengthen authentication password requirements
+- feat: improve form accessibility for screen readers
+
+Example of splitting commits:
+- First commit: feat: add new solc version type definitions
+- Second commit: docs: update documentation for new solc versions
+- Third commit: chore: update package.json dependencies
+- Fourth commit: feat: add type definitions for new API endpoints
+- Fifth commit: feat: improve concurrency handling in worker threads
+- Sixth commit: fix: resolve linting issues in new code
+- Seventh commit: test: add unit tests for new solc version features
+- Eighth commit: security: update dependencies with security vulnerabilities
 
 ## Command Options
 
@@ -106,4 +123,3 @@ Good commit messages:
 - If suggesting multiple commits, it will help you stage and commit the changes separately
 - Always reviews the commit diff to ensure the message matches the changes
 - Works with any programming language and project type
-```

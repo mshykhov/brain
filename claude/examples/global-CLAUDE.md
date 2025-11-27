@@ -1,8 +1,3 @@
-# Global CLAUDE.md
-
-Location: `~/.claude/CLAUDE.md`
-
-```markdown
 # Global Instructions
 
 ## Language
@@ -30,4 +25,3 @@ Location: `~/.claude/CLAUDE.md`
 ## Git Commits
 - No Claude/AI attribution in commit messages
 - Use conventional commits format
-```
