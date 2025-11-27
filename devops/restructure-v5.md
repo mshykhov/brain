@@ -127,16 +127,42 @@
 | Secrets | Unlimited |
 | Activity Logs | 3 дня |
 
-### Установка
+### Установка (через ArgoCD)
+
+ESO устанавливается через ArgoCD. Doppler token создаётся вручную один раз при bootstrap.
+
+```yaml
+# mg-infrastructure/apps/templates/external-secrets.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-secrets
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.external-secrets.io
+    chart: external-secrets
+    targetRevision: 0.17.0
+    helm:
+      releaseName: external-secrets
+      values: |
+        installCRDs: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-secrets
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
 
 ```bash
-# External Secrets Operator
-helm repo add external-secrets https://charts.external-secrets.io
-helm install external-secrets external-secrets/external-secrets \
-  -n external-secrets --create-namespace \
-  --set installCRDs=true
-
-# Doppler Service Token (создаётся вручную в Doppler UI)
+# Doppler Service Token (создаётся вручную ОДИН раз при bootstrap)
 # Project Settings → Service Tokens → Generate
 kubectl create secret generic doppler-token \
   -n external-secrets \
@@ -388,21 +414,51 @@ Tailscale обеспечивает **zero-trust доступ** к инфраст
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Установка Tailscale Operator
+### Установка Tailscale Operator (через ArgoCD)
+
+OAuth credentials создаются вручную один раз при bootstrap.
+
+```yaml
+# mg-infrastructure/apps/templates/tailscale.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  source:
+    repoURL: https://pkgs.tailscale.com/helmcharts
+    chart: tailscale-operator
+    targetRevision: 1.82.0
+    helm:
+      releaseName: tailscale-operator
+      values: |
+        operatorConfig:
+          hostname: k8s-operator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
 
 ```bash
-# 1. Создать OAuth client в Tailscale Admin Console
-#    Settings → OAuth clients → Generate
+# OAuth credentials (создаются ОДИН раз при bootstrap)
+# 1. Tailscale Admin Console → Settings → OAuth clients → Generate
 #    Scopes: devices, routes, dns
-
-# 2. Установить operator
-helm repo add tailscale https://pkgs.tailscale.com/helmcharts
-helm upgrade --install tailscale-operator tailscale/tailscale-operator \
-  -n tailscale --create-namespace \
-  --set oauth.clientId="${TS_CLIENT_ID}" \
-  --set oauth.clientSecret="${TS_CLIENT_SECRET}" \
-  --set operatorConfig.hostname="k8s-operator" \
-  --wait
+# 2. Создать secret:
+kubectl create namespace tailscale
+kubectl create secret generic operator-oauth \
+  -n tailscale \
+  --from-literal=client_id="${TS_CLIENT_ID}" \
+  --from-literal=client_secret="${TS_CLIENT_SECRET}"
 ```
 
 ### Expose сервисов через Tailscale — Ingress (рекомендуется)
@@ -556,11 +612,39 @@ spec:
 
 ## MetalLB — LoadBalancer для Bare-Metal
 
-### Установка
+> **Версия:** 0.15.2 (Helm chart)
+> **Docs:** https://metallb.io/
 
-```bash
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.8/config/manifests/metallb-native.yaml
-kubectl wait --for=condition=ready pod -l app=metallb -n metallb-system --timeout=120s
+MetalLB устанавливается через ArgoCD как Helm chart. Конфигурация (IPAddressPool) применяется отдельным Application после установки CRDs.
+
+### ArgoCD Application
+
+```yaml
+# mg-infrastructure/apps/templates/metallb.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://metallb.github.io/metallb
+    chart: metallb
+    targetRevision: 0.15.2
+    helm:
+      releaseName: metallb
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
 ```
 
 ### Конфигурация IPAddressPool
@@ -576,7 +660,6 @@ spec:
   addresses:
     # Диапазон IP из вашей локальной сети (пример для 192.168.1.x)
     - 192.168.1.240-192.168.1.250
-  autoAssign: true
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
@@ -586,32 +669,6 @@ metadata:
 spec:
   ipAddressPools:
     - default-pool
-  # Опционально: ограничить интерфейсы
-  # interfaces:
-  #   - eth0
-```
-
-### Для VPS/Cloud с одним IP
-
-```yaml
-# Если у вас один публичный IP на ноде
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: single-ip-pool
-  namespace: metallb-system
-spec:
-  addresses:
-    - 203.0.113.10/32  # Ваш публичный IP
----
-apiVersion: metallb.io/v1beta1
-kind: L2Advertisement
-metadata:
-  name: single-ip
-  namespace: metallb-system
-spec:
-  ipAddressPools:
-    - single-ip-pool
 ```
 
 ---
@@ -2337,149 +2394,96 @@ roleRef:
 
 ## Bootstrap нового кластера
 
+> **Принцип:** Вручную устанавливается ТОЛЬКО ArgoCD. Всё остальное (MetalLB, Longhorn, ESO, Tailscale)
+> управляется через GitOps — ArgoCD синхронизирует их из git репозитория.
+
+### Что устанавливается вручную (один раз)
+
+1. **ArgoCD** — единственный компонент, который нужен для bootstrap
+2. **Secrets** — credentials которые нельзя хранить в git:
+   - Doppler token (для ESO)
+   - Tailscale OAuth (если используется)
+   - SSH ключ для ArgoCD → GitHub
+
+### Bootstrap скрипт
+
 ```bash
 #!/bin/bash
 # scripts/bootstrap.sh
+# Минимальный bootstrap: только ArgoCD + secrets
+# Всё остальное управляется через GitOps
 
 set -euo pipefail
 
-echo "=== MG-Central Kubernetes Bootstrap ==="
+ARGOCD_VERSION="v2.13.5"  # Stable 2.x branch
+REPO_URL="https://github.com/mshykhov/mg-infrastructure.git"
+
+echo "=== GitOps Bootstrap ==="
+echo "ArgoCD version: ${ARGOCD_VERSION}"
 echo ""
 
-# Цвета для вывода
+# Цвета
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Функция для проверки успешности
-check_status() {
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ $1${NC}"
-    else
-        echo -e "${RED}✗ $1 failed${NC}"
-        exit 1
-    fi
-}
+check() { [ $? -eq 0 ] && echo -e "${GREEN}✓ $1${NC}" || { echo -e "${RED}✗ $1${NC}"; exit 1; }; }
 
-# 1. Проверка prerequisites
+# 1. Prerequisites
 echo "Step 1: Checking prerequisites..."
 command -v kubectl >/dev/null 2>&1 || { echo "kubectl required"; exit 1; }
-command -v helm >/dev/null 2>&1 || { echo "helm required"; exit 1; }
 kubectl cluster-info >/dev/null 2>&1 || { echo "No cluster connection"; exit 1; }
-check_status "Prerequisites check"
+check "Prerequisites"
 
-# 2. MetalLB
+# 2. ArgoCD (единственный kubectl apply кроме root.yaml)
 echo ""
-echo "Step 2: Installing MetalLB..."
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.8/config/manifests/metallb-native.yaml
-kubectl wait --for=condition=ready pod -l app=metallb -n metallb-system --timeout=120s
-check_status "MetalLB installed"
-
-echo -e "${YELLOW}Configure MetalLB IP pool:${NC}"
-read -p "Enter IP range (e.g., 192.168.1.240-192.168.1.250): " IP_RANGE
-cat <<EOF | kubectl apply -f -
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: default-pool
-  namespace: metallb-system
-spec:
-  addresses:
-    - ${IP_RANGE}
----
-apiVersion: metallb.io/v1beta1
-kind: L2Advertisement
-metadata:
-  name: default
-  namespace: metallb-system
-spec:
-  ipAddressPools:
-    - default-pool
-EOF
-check_status "MetalLB configured"
-
-# 3. Longhorn
-echo ""
-echo "Step 3: Installing Longhorn..."
-kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/v1.7.2/deploy/longhorn.yaml
-echo "Waiting for Longhorn (this may take a few minutes)..."
-kubectl wait --for=condition=ready pod -l app=longhorn-manager -n longhorn-system --timeout=300s
-check_status "Longhorn installed"
-
-# 4. ArgoCD
-echo ""
-echo "Step 4: Installing ArgoCD..."
+echo "Step 2: Installing ArgoCD..."
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.2/manifests/install.yaml
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml
+echo "Waiting for ArgoCD..."
 kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=300s
-check_status "ArgoCD installed"
+check "ArgoCD installed"
 
-# 5. External Secrets Operator
+# 3. Secrets (не хранятся в git)
 echo ""
-echo "Step 5: Installing External Secrets Operator..."
-helm repo add external-secrets https://charts.external-secrets.io
-helm upgrade --install external-secrets external-secrets/external-secrets \
-  -n external-secrets --create-namespace \
-  --set installCRDs=true \
-  --wait
-check_status "External Secrets Operator installed"
+echo -e "${YELLOW}Step 3: Configure secrets${NC}"
 
-# 6. Doppler Token
+# 3a. Doppler (опционально, для ESO)
+read -p "Configure Doppler? (y/N): " CONFIGURE_DOPPLER
+if [[ "$CONFIGURE_DOPPLER" =~ ^[Yy]$ ]]; then
+  echo "Get token: Doppler → Project → Access → Service Tokens"
+  read -p "Doppler Token (dp.st.xxx): " DOPPLER_TOKEN
+  kubectl create namespace external-secrets --dry-run=client -o yaml | kubectl apply -f -
+  kubectl create secret generic doppler-token \
+    -n external-secrets \
+    --from-literal=dopplerToken="${DOPPLER_TOKEN}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  check "Doppler token"
+fi
+
+# 3b. Tailscale (опционально)
+read -p "Configure Tailscale? (y/N): " CONFIGURE_TS
+if [[ "$CONFIGURE_TS" =~ ^[Yy]$ ]]; then
+  echo "Get OAuth: Tailscale Admin → Settings → OAuth clients"
+  read -p "Client ID: " TS_CLIENT_ID
+  read -p "Client Secret: " TS_CLIENT_SECRET
+  kubectl create namespace tailscale --dry-run=client -o yaml | kubectl apply -f -
+  kubectl create secret generic operator-oauth \
+    -n tailscale \
+    --from-literal=client_id="${TS_CLIENT_ID}" \
+    --from-literal=client_secret="${TS_CLIENT_SECRET}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  check "Tailscale OAuth"
+fi
+
+# 4. Root Application (запускает GitOps)
 echo ""
-echo -e "${YELLOW}Step 6: Configure Doppler${NC}"
-echo "1. Go to Doppler → Project → Access → Service Tokens"
-echo "2. Generate token for production environment"
-read -p "Doppler Service Token (dp.st.xxx): " DOPPLER_TOKEN
-
-kubectl create secret generic doppler-token \
-  -n external-secrets \
-  --from-literal=dopplerToken="${DOPPLER_TOKEN}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-check_status "Doppler token configured"
-
-# 7. Tailscale Operator
-echo ""
-echo -e "${YELLOW}Step 7: Configure Tailscale${NC}"
-echo "1. Go to Tailscale Admin Console → Settings → OAuth clients"
-echo "2. Generate client with scopes: devices, routes, dns"
-read -p "Client ID: " TS_CLIENT_ID
-read -p "Client Secret: " TS_CLIENT_SECRET
-
-helm repo add tailscale https://pkgs.tailscale.com/helmcharts
-helm upgrade --install tailscale-operator tailscale/tailscale-operator \
-  -n tailscale --create-namespace \
-  --set oauth.clientId="${TS_CLIENT_ID}" \
-  --set oauth.clientSecret="${TS_CLIENT_SECRET}" \
-  --wait
-check_status "Tailscale Operator installed"
-
-# 8. SSH Key для Git repos
-echo ""
-echo -e "${YELLOW}Step 8: Configure Git SSH Access${NC}"
-echo "Generating SSH key for ArgoCD..."
-
-ssh-keygen -t ed25519 -C "argocd@mg-central" -f /tmp/argocd-key -N ""
-echo ""
-echo -e "${GREEN}Add this PUBLIC key to GitHub Deploy Keys:${NC}"
-cat /tmp/argocd-key.pub
-echo ""
-read -p "Press Enter after adding the key to GitHub..."
-
-kubectl create secret generic mg-repos-ssh \
-  -n argocd \
-  --from-file=sshPrivateKey=/tmp/argocd-key \
-  --dry-run=client -o yaml | kubectl apply -f -
-rm /tmp/argocd-key /tmp/argocd-key.pub
-check_status "Git SSH key configured"
-
-# 9. Apply root Application
-echo ""
-echo "Step 9: Applying root Application..."
+echo "Step 4: Applying root Application..."
 kubectl apply -f bootstrap/root.yaml
-check_status "Root Application applied"
+check "Root Application"
 
-# 10. Output access info
+# 5. Done
 echo ""
 echo "=========================================="
 echo -e "${GREEN}=== BOOTSTRAP COMPLETE ===${NC}"
@@ -2523,8 +2527,8 @@ echo "  - Set up Alertmanager receivers (Telegram token)"
 | **Doppler** | Secret management | SaaS | UI, простота, unlimited envs |
 | Traefik | Ingress Controller | MIT | Auto SSL, Gateway API |
 | cert-manager | TLS certificates | Apache 2.0 | Стандарт для K8s |
-| Longhorn | Distributed Storage | Apache 2.0 | Simple, K8s-native |
-| MetalLB | Bare-metal LB | Apache 2.0 | Необходим для bare-metal |
+| Longhorn | Distributed Storage | Apache 2.0 | Simple, K8s-native (v1.10.1) |
+| MetalLB | Bare-metal LB | Apache 2.0 | Необходим для bare-metal (v0.15.2) |
 
 ### Data
 
