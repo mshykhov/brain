@@ -1,14 +1,10 @@
-# Private - НЕ синхронизируется с git
-private/
+# Private folders в каждой области
+**/private/
 
-# Obsidian workspace
+# Obsidian
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
-
-# Plugin cache
 .obsidian/plugins/*/data.json
-
-# Trash
 .trash/
 
 # OS

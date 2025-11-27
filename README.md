@@ -6,18 +6,22 @@
 
 ```
 brain/
-├── areas/          # Области знаний (DevOps, Security, AI, ...)
-├── inbox/          # Быстрые заметки для разбора
-├── resources/      # Книги, курсы, ссылки
-├── projects/       # Активные проекты
-├── private/        # Приватное (не синхронизируется с git)
-├── templates/      # Шаблоны заметок
-└── attachments/    # Картинки и файлы
+├── devops/           # DevOps, инфраструктура
+│   ├── tools/
+│   ├── concepts/
+│   ├── cheatsheets/
+│   ├── resources/
+│   └── private/
+├── security/         # Безопасность, хакинг
+│   ├── tools/
+│   ├── techniques/
+│   ├── ctf/
+│   ├── resources/
+│   └── private/
+├── ai/               # AI, ML
+│   └── ...
+├── [другие области]/
+└── templates/        # Общие шаблоны
 ```
 
-## Навигация
-
-- По папкам: `areas/devops/`, `areas/security/`
-- По тегам: `#tool`, `#concept`, `#cheatsheet`
-- По ссылкам: `[[wikilinks]]`
-- Graph view: `Ctrl+G`
+Каждая область - автономная единица со своей структурой.
