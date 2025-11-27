@@ -48,6 +48,32 @@ kubectl get pods -n example-api
 
 В ArgoCD UI: Applications → должен появиться `example-api`.
 
+## Финальная проверка
+
+```bash
+# 1. ApplicationSet создан
+kubectl get applicationsets -n argocd
+
+# 2. Application появился
+kubectl get applications -n argocd
+
+# 3. Namespace создан
+kubectl get ns example-api
+
+# 4. Ресурсы созданы
+kubectl get all -n example-api
+
+# 5. Детали deployment
+kubectl describe deployment -n example-api
+
+# 6. События
+kubectl get events -n example-api --sort-by='.lastTimestamp'
+```
+
+> **Ожидаемо:** Pod будет в статусе `ImagePullBackOff` или `ErrImagePull` — это нормально!
+> Docker образ ещё не существует, и credentials для приватного registry ещё не настроены.
+> Это исправим в Фазе 3 (Secrets) и Фазе 4 (CI/CD).
+
 ## Troubleshooting
 
 ### Application не появляется
