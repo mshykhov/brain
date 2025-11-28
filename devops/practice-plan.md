@@ -79,10 +79,17 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 - [ ] Velero
 - [ ] Тест: backup → delete → restore
 
-## Фаза 9: Full Test
+## Фаза 9: Full Test (dev)
 - [ ] Все pods Running
 - [ ] Приложение отвечает
 - [ ] Секреты синхронизируются
 - [ ] CI/CD: push → autodeploy работает
 - [ ] Метрики/логи работают
 - [ ] Backup/restore работает
+
+## Фаза 10: Production Environment
+- [ ] Doppler config `prd` + Service Token
+- [ ] K8s Secret `doppler-token-prd`
+- [ ] ClusterSecretStore `doppler-prd`
+- [ ] ApplicationSet для prd namespace
+- [ ] Тест: деплой в prd
