@@ -75,4 +75,4 @@ Doppler Project: example
 
 ## Следующий шаг
 
-[External Secrets Operator](external-secrets.md)
+[02. External Secrets Operator](02-external-secrets.md)
