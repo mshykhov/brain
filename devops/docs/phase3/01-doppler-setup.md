@@ -13,11 +13,28 @@ Doppler — централизованное хранилище секретов
    - Unlimited secrets
    - 5 environments per project
 
-## 2. Создание проекта
+## 2. Создание проекта и configs
 
 1. Dashboard → **+ Create Project**
 2. Name: `example`
-3. Автоматически создадутся environments: `dev`, `stg`, `prd`
+3. Создать configs:
+   - `shared` — общие секреты для всех environments (DockerHub и т.д.)
+   - `dev` — app secrets для dev environment
+   - `prd` — app secrets для prd environment (Phase 10)
+
+## Архитектура configs
+
+```
+Doppler Project: example
+├── config: shared  → общие secrets (DockerHub, API keys общие для всех env)
+├── config: dev     → app secrets для dev environment
+└── config: prd     → app secrets для prd environment
+```
+
+**Почему shared отдельно?**
+- DockerHub credentials одинаковые для всех environments
+- Избегаем дублирования секретов
+- Один ClusterSecretStore `doppler-shared` для общих секретов
 
 ## 3. Docker Hub Access Token
 
@@ -33,44 +50,61 @@ Doppler — централизованное хранилище секретов
 
 ## 4. Добавление секретов в Doppler
 
+### Config: shared (общие секреты)
+
+Dashboard → Projects → `example` → `shared` → **Add Secret**:
+
+| Key | Value | Описание |
+|-----|-------|----------|
+| `DOCKERHUB_USERNAME` | `your-username` | Docker Hub username |
+| `DOCKERHUB_PULL_TOKEN` | `dckr_pat_xxx...` | Read-only token |
+
+### Config: dev (app secrets)
+
 Dashboard → Projects → `example` → `dev` → **Add Secret**:
 
 | Key | Value | Описание |
 |-----|-------|----------|
-| `DOCKERHUB_USERNAME` | `shykhov` | Docker Hub username |
-| `DOCKERHUB_PULL_TOKEN` | `dckr_pat_xxx...` | Read-only token |
+| `DATABASE_URL` | `postgres://...` | (пример) DB connection |
+| `API_KEY` | `xxx...` | (пример) App API key |
 
-После добавления секреты сохраняются автоматически.
+## 5. Создание Service Tokens
 
-## 5. Создание Service Token
+Для каждого config нужен отдельный Service Token:
 
-Service Token нужен для доступа External Secrets Operator к Doppler:
+### Для shared config:
+1. Dashboard → Projects → `example` → `shared`
+2. **Access** → **Service Tokens** → **+ Generate**
+3. **Name:** `k8s-eso-shared`
+4. **Generate** → скопируй (`dp.st.shared.xxxx...`)
 
+### Для dev config:
 1. Dashboard → Projects → `example` → `dev`
-2. Вкладка **Access** (справа вверху)
-3. **Service Tokens** → **+ Generate Service Token**
-4. **Name:** `k8s-eso`
-5. **Access:** `read`
-6. **Generate**
-7. **Скопируй токен** (`dp.st.dev.xxxx...`) — показывается только один раз!
+2. **Access** → **Service Tokens** → **+ Generate**
+3. **Name:** `k8s-eso-dev`
+4. **Generate** → скопируй (`dp.st.dev.xxxx...`)
 
-> **Важно:** Сохрани токен — он понадобится для создания K8s Secret.
+> **Важно:** Сохрани токены — они понадобятся для создания K8s Secrets.
 
 ## Проверка
 
 В Doppler UI:
-- Projects → `example` → `dev`
-- Видны секреты: `DOCKERHUB_USERNAME`, `DOCKERHUB_PULL_TOKEN`
-- Access → Service Tokens → виден `k8s-eso`
+- Projects → `example` → `shared` → видны: `DOCKERHUB_USERNAME`, `DOCKERHUB_PULL_TOKEN`
+- Projects → `example` → `dev` → видны app secrets
+- Access → Service Tokens → видны `k8s-eso-shared`, `k8s-eso-dev`
 
-## Структура секретов
+## Итоговая структура
 
 ```
 Doppler Project: example
-└── dev
-    ├── DOCKERHUB_USERNAME      # Docker Hub username
-    ├── DOCKERHUB_PULL_TOKEN    # Read-only token (для K8s pull)
-    └── (позже) DOCKERHUB_PUSH_TOKEN  # Read & Write (для CI/CD, Фаза 4)
+├── shared/
+│   ├── DOCKERHUB_USERNAME
+│   ├── DOCKERHUB_PULL_TOKEN
+│   └── (позже) другие общие секреты
+├── dev/
+│   └── (app secrets для dev)
+└── prd/ (Phase 10)
+    └── (app secrets для prd)
 ```
 
 ## Следующий шаг

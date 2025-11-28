@@ -2,18 +2,40 @@
 
 ## Зачем
 
-Это **единственный секрет**, который создаётся вручную (на каждый environment). Он нужен для того, чтобы External Secrets Operator мог аутентифицироваться в Doppler и синхронизировать остальные секреты.
+Это **единственные секреты**, которые создаются вручную. Они нужны для того, чтобы External Secrets Operator мог аутентифицироваться в Doppler и синхронизировать остальные секреты.
+
+## Архитектура секретов
+
+```
+Doppler Project: example
+├── config: dev     → app secrets для dev environment
+├── config: prd     → app secrets для prd environment
+└── config: shared  → общие secrets (DockerHub и т.д.)
+```
+
+Каждый Doppler config требует свой Service Token и K8s Secret.
 
 ## Naming Convention
 
-Для multi-environment используем суффикс `-dev`, `-stg`, `-prd`:
+| Doppler Config | K8s Secret | ClusterSecretStore | Назначение |
+|----------------|------------|-------------------|------------|
+| `shared` | `doppler-token-shared` | `doppler-shared` | Общие секреты (DockerHub) |
+| `dev` | `doppler-token-dev` | `doppler-dev` | App secrets для dev |
+| `prd` | `doppler-token-prd` | `doppler-prd` | App secrets для prd |
 
-| Environment | Secret Name | ClusterSecretStore |
-|-------------|-------------|-------------------|
-| dev | `doppler-token-dev` | `doppler-dev` |
-| prd | `doppler-token-prd` | `doppler-prd` |
+## Создание секретов
 
-## Создание секрета (dev)
+### 1. Shared (общие секреты)
+
+Для DockerHub credentials и других общих секретов:
+
+```bash
+HISTIGNORE='*kubectl*' kubectl create secret generic doppler-token-shared \
+    --namespace external-secrets \
+    --from-literal=dopplerToken="dp.st.shared.XXXX"
+```
+
+### 2. Dev environment
 
 ```bash
 HISTIGNORE='*kubectl*' kubectl create secret generic doppler-token-dev \
@@ -21,46 +43,43 @@ HISTIGNORE='*kubectl*' kubectl create secret generic doppler-token-dev \
     --from-literal=dopplerToken="dp.st.dev.XXXX"
 ```
 
-Замени `dp.st.dev.XXXX` на Service Token из Doppler (project: `example`, config: `dev`).
+### 3. Prd environment (Phase 10)
 
-> **Примечание:** `HISTIGNORE` предотвращает сохранение команды с токеном в bash history.
-
-## Почему в namespace external-secrets
-
-ClusterSecretStore будет ссылаться на этот секрет. Для ClusterSecretStore нужно явно указать namespace где лежит секрет — логично держать все токены рядом с ESO.
-
-## Проверка
-
-```bash
-# Секрет создан
-kubectl get secret doppler-token-dev -n external-secrets
-
-# Детали (без значения)
-kubectl describe secret doppler-token-dev -n external-secrets
-```
-
-Ожидаемый вывод:
-```
-Name:         doppler-token-dev
-Namespace:    external-secrets
-Type:         Opaque
-
-Data
-====
-dopplerToken:  XX bytes
-```
-
-## Добавление других environments
-
-Для `prd` (Phase 10):
-1. Создать Service Token в Doppler (project: `example`, config: `prd`)
-2. Создать секрет:
 ```bash
 HISTIGNORE='*kubectl*' kubectl create secret generic doppler-token-prd \
     --namespace external-secrets \
     --from-literal=dopplerToken="dp.st.prd.XXXX"
 ```
 
+> **Примечание:** `HISTIGNORE` предотвращает сохранение команды с токеном в bash history.
+
+## Где взять токен
+
+1. Doppler Dashboard → project `example` → config (`shared`/`dev`/`prd`)
+2. Access tab → Service Tokens → Generate
+3. Скопировать токен (показывается только один раз!)
+
+## Почему в namespace external-secrets
+
+ClusterSecretStore ссылается на эти секреты. Для ClusterSecretStore нужно явно указать namespace — логично держать все токены рядом с ESO.
+
+## Проверка
+
+```bash
+# Все секреты созданы
+kubectl get secrets -n external-secrets | grep doppler-token
+
+# Детали конкретного секрета
+kubectl describe secret doppler-token-shared -n external-secrets
+```
+
+Ожидаемый вывод:
+```
+NAME                   TYPE     DATA   AGE
+doppler-token-shared   Opaque   1      1m
+doppler-token-dev      Opaque   1      5m
+```
+
 ## Следующий шаг
 
-[ClusterSecretStore](cluster-secret-store.md)
+[ClusterSecretStore](04-cluster-secret-store.md)
