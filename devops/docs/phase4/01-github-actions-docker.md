@@ -1,15 +1,15 @@
-# Phase 4: GitHub Actions - Docker Build & Push
+# Phase 4: GitHub Actions - Multi-Platform Docker Build
 
 ## Зачем
 
-GitHub Actions автоматически билдит Docker образ и пушит в DockerHub при создании тега. Это первый шаг CI/CD pipeline.
+GitHub Actions автоматически билдит multi-platform Docker образ и пушит в DockerHub при создании тега. Поддерживает pre-release теги для тестирования в dev перед production.
 
 ## Архитектура
 
 ```
 Developer                    GitHub Actions              Docker Hub
     │                             │                          │
-    ├─── git tag v1.0.0 ──────────►                          │
+    ├─── git tag v0.1.0-rc.1 ─────►                          │
     ├─── git push --tags ─────────►                          │
     │                             │                          │
     │                      ┌──────┴──────┐                   │
@@ -18,289 +18,240 @@ Developer                    GitHub Actions              Docker Hub
     │                      └──────┬──────┘                   │
     │                             │                          │
     │                      ┌──────┴──────┐                   │
-    │                      │ Validate    │                   │
-    │                      │ Semver Tag  │                   │
-    │                      └──────┬──────┘                   │
-    │                             │                          │
-    │                      ┌──────┴──────┐                   │
-    │                      │ Build Image │                   │
+    │                      │ Multi-arch  │                   │
+    │                      │ Build       │                   │
+    │                      │ amd64+arm64 │                   │
     │                      └──────┬──────┘                   │
     │                             │                          │
     │                             ├─── push ─────────────────►
-    │                             │    shykhov/example-api:1.0.0
-    │                             │    shykhov/example-api:1.0
-    │                             │    shykhov/example-api:1
-    │                             │    shykhov/example-api:latest
+    │                             │    user/app:0.1.0-rc.1   │
     │                             │                          │
 ```
 
-## Что такое Semver
-
-**Semantic Versioning** — стандарт версионирования: `MAJOR.MINOR.PATCH`
+## Workflow: Dev → Prd
 
 ```
-v1.2.3
-│ │ └── PATCH: баг-фиксы (обратно совместимые)
-│ └──── MINOR: новые фичи (обратно совместимые)
-└────── MAJOR: breaking changes (несовместимые)
+1. v0.1.0-rc.1  ──► builds ──► DEV auto-deploy (pre-release)
+2. Test in DEV
+3. v0.1.0       ──► builds ──► PRD auto-deploy (stable)
 ```
 
-**Примеры:**
-- `1.0.0 → 1.0.1` — исправили баг
-- `1.0.1 → 1.1.0` — добавили фичу
-- `1.1.0 → 2.0.0` — сломали обратную совместимость
+## Semver + Pre-release
 
-**Pre-release версии:**
-- `v2.0.0-alpha.1` — альфа
-- `v2.0.0-beta.1` — бета
-- `v2.0.0-rc.1` — release candidate
+**Semantic Versioning:** `MAJOR.MINOR.PATCH[-PRERELEASE]`
 
-> **Важно:** Major version zero (`v0.x.x`) означает начальную разработку — API нестабилен.
+| Тег | Docker Tags | Environment |
+|-----|-------------|-------------|
+| `v0.1.0-rc.1` | `0.1.0-rc.1` | DEV only |
+| `v0.1.0-beta.2` | `0.1.0-beta.2` | DEV only |
+| `v0.1.0` | `0.1.0` | DEV + PRD |
+| `v1.2.3` | `1.2.3`, `1` | DEV + PRD |
 
-## 1. Создание Docker Hub Access Token
-
-### Для GitHub Actions (Read & Write)
+## 1. Docker Hub Access Token
 
 1. https://hub.docker.com/settings/security
 2. **New Access Token**
-3. **Description:** `github-actions-example-api`
+3. **Description:** `github-actions`
 4. **Access permissions:** `Read & Write`
 5. **Generate** → скопируй токен
 
-> **Важно:** Токен показывается один раз! Сохрани его.
+## 2. GitHub Secrets
 
-### Итого токенов в Docker Hub
-
-| Токен | Permissions | Использование |
-|-------|-------------|---------------|
-| `k8s-pull` | Read-only | Kubernetes pull images |
-| `github-actions-example-api` | Read & Write | CI/CD push images |
-
-## 2. Настройка GitHub Secrets
-
-1. Перейди в репозиторий `example-api` на GitHub
-2. **Settings** → **Secrets and variables** → **Actions**
-3. **New repository secret**
-
-### Добавить секреты:
+Repository → **Settings** → **Secrets and variables** → **Actions**:
 
 | Name | Value |
 |------|-------|
-| `DOCKERHUB_USERNAME` | `shykhov` (твой Docker Hub username) |
-| `DOCKERHUB_TOKEN` | `dckr_pat_xxx...` (токен с Read & Write) |
+| `DOCKERHUB_USERNAME` | твой Docker Hub username |
+| `DOCKERHUB_TOKEN` | токен с Read & Write |
 
 ## 3. Workflow файл
 
-Создай файл `.github/workflows/docker.yaml` в репозитории `example-api`:
+`.github/workflows/release.yaml`:
 
 ```yaml
 # =============================================================================
-# DOCKER BUILD & PUSH WORKFLOW
+# RELEASE WORKFLOW - BUILD & PUSH MULTI-PLATFORM DOCKER IMAGE
 # =============================================================================
 # Triggers: Push semantic version tags (v*)
 # Registry: Docker Hub
+# Platforms: linux/amd64, linux/arm64
+#
+# Workflow:
+#   1. Push v0.1.0-rc.1 -> builds 0.1.0-rc.1 -> deploys to DEV (auto)
+#   2. Test in DEV environment
+#   3. Push v0.1.0 -> builds 0.1.0 -> deploys to PRD (auto)
 #
 # Tag examples:
-#   v1.2.3 -> 1.2.3, 1.2, 1, latest
-#   v0.1.0 -> 0.1.0, 0.1 (no 0 tag for major version zero)
-#   v2.0.0-beta.1 -> 2.0.0-beta.1 (pre-release, no latest)
+#   v0.1.0-rc.1  -> 0.1.0-rc.1 (pre-release, DEV only)
+#   v0.1.0-beta.2 -> 0.1.0-beta.2 (pre-release, DEV only)
+#   v0.1.0       -> 0.1.0 (stable, PRD)
+#   v1.2.3       -> 1.2.3, 1 (stable, PRD)
+#
+# Required secrets:
+#   DOCKERHUB_USERNAME - Docker Hub username
+#   DOCKERHUB_TOKEN    - Docker Hub Access Token (Read & Write)
 # =============================================================================
-name: Docker Build & Push
+name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
 
-env:
-  IMAGE_NAME: shykhov/example-api
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build:
+  docker:
     name: Build and Push
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Validate semver tag
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-            echo "::error::Tag '$TAG' is not valid semver (expected: vX.Y.Z)"
-            exit 1
-          fi
-          echo "Valid semver tag: $TAG"
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-          flavor: |
-            latest=auto
-
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: mode=max
-          sbom: true
-
-      - name: Output image info
-        run: |
-          echo "## Docker Image Published" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
 ```
 
-## 4. Понимание workflow
+## 4. Ключевые особенности
 
-### Триггер
+### Multi-platform build
 
 ```yaml
-on:
-  push:
-    tags:
-      - 'v*.*.*'
+platforms: linux/amd64,linux/arm64
 ```
 
-Workflow запускается только при push тегов формата `v*.*.*` (например `v1.0.0`).
+Один образ работает на x86 серверах и ARM (Raspberry Pi, Apple Silicon).
 
-### Валидация semver
+### Dynamic image name
+
+```yaml
+images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
+```
+
+Нет hardcoded значений — работает для любого репозитория.
+
+### App version injection
+
+```yaml
+build-args: |
+  APP_VERSION=${{ steps.meta.outputs.version }}
+```
+
+Версия из git tag передаётся в Docker build для Spring Boot `buildInfo()`.
+
+### Concurrency control
+
+```yaml
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+```
+
+Предотвращает одновременные билды одного тега.
+
+### Tag pattern
+
+```yaml
+tags:
+  - 'v[0-9]+.[0-9]+.[0-9]+*'
+```
+
+Ловит stable (`v0.1.0`) и pre-release (`v0.1.0-rc.1`) теги.
+
+## 5. Dockerfile
+
+```dockerfile
+# Build stage
+FROM gradle:8.11-jdk21 AS build
+WORKDIR /app
+
+ARG APP_VERSION=0.0.1-SNAPSHOT
+
+COPY build.gradle.kts settings.gradle.kts ./
+COPY src ./src
+RUN APP_VERSION=${APP_VERSION} gradle bootJar --no-daemon
+
+# Runtime stage
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+
+RUN addgroup -g 1000 app && adduser -u 1000 -G app -D app
+USER app
+
+COPY --from=build /app/build/libs/*.jar app.jar
+
+EXPOSE 8080
+
+ENV JAVA_OPTS="-Xmx256m -Xms128m"
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+```
+
+## 6. build.gradle.kts
+
+```kotlin
+version = System.getenv("APP_VERSION") ?: "0.0.1-SNAPSHOT"
+
+springBoot {
+    buildInfo()
+}
+```
+
+Версия берётся из env variable и доступна через `/actuator/info`.
+
+## 7. Использование
+
+### Pre-release (для тестирования в dev)
 
 ```bash
-if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-  exit 1
-fi
+git tag v0.1.0-rc.1
+git push origin v0.1.0-rc.1
 ```
 
-Проверяет что тег соответствует формату:
-- ✅ `v1.0.0`
-- ✅ `v2.1.3-beta.1`
-- ❌ `v1.0`
-- ❌ `release-1.0.0`
-
-### Генерация тегов
-
-```yaml
-tags: |
-  type=semver,pattern={{version}}      # v1.2.3 -> 1.2.3
-  type=semver,pattern={{major}}.{{minor}}  # v1.2.3 -> 1.2
-  type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-```
-
-| Git Tag | Docker Tags |
-|---------|-------------|
-| `v1.2.3` | `1.2.3`, `1.2`, `1`, `latest` |
-| `v0.1.0` | `0.1.0`, `0.1` |
-| `v2.0.0-beta.1` | `2.0.0-beta.1` |
-
-### Почему нет тега `0` для v0.x.x?
-
-Major version zero означает "начальная разработка" — API нестабилен. Тег `0` будет постоянно перезаписываться, что бесполезно.
-
-### Кеширование
-
-```yaml
-cache-from: type=gha
-cache-to: type=gha,mode=max
-```
-
-Использует GitHub Actions cache для ускорения билдов.
-
-### Security attestations
-
-```yaml
-provenance: mode=max
-sbom: true
-```
-
-- **Provenance** — информация о том как и где был собран образ
-- **SBOM** (Software Bill of Materials) — список всех зависимостей
-
-## 5. Commit и Push
+### Stable release (для production)
 
 ```bash
-cd /path/to/example-api
-
-# Добавить workflow
-git add .github/workflows/docker.yaml
-git commit -m "feat: add Docker build workflow"
-git push origin master
-```
-
-## 6. Создание первого релиза
-
-```bash
-# Создать тег
 git tag v0.1.0
-
-# Запушить тег (это триггерит workflow)
 git push origin v0.1.0
 ```
 
-## 7. Проверка
+## Проверка
 
-### GitHub Actions
-
-1. GitHub → `example-api` → **Actions**
-2. Должен появиться workflow "Docker Build & Push"
-3. Проверь что статус ✅
-
-### Docker Hub
-
-1. https://hub.docker.com/r/shykhov/example-api/tags
-2. Должны появиться теги: `0.1.0`, `0.1`, `latest`
-
-### Локально
-
-```bash
-docker pull shykhov/example-api:0.1.0
-docker run --rm -p 8080:8080 shykhov/example-api:0.1.0
-curl http://localhost:8080/actuator/health
-```
-
-## Troubleshooting
-
-### Workflow не запускается
-
-- Проверь что тег соответствует паттерну `v*.*.*`
-- Проверь что workflow файл в ветке `master`/`main`
-
-### Login failed
-
-- Проверь секреты `DOCKERHUB_USERNAME` и `DOCKERHUB_TOKEN`
-- Проверь что токен имеет права `Read & Write`
-
-### Build failed
-
-- Проверь Dockerfile
-- Проверь что все файлы есть в репозитории
+1. **GitHub Actions:** Repository → Actions → должен быть workflow "Release"
+2. **Docker Hub:** https://hub.docker.com/r/USERNAME/REPO/tags
 
 ## Следующий шаг
 

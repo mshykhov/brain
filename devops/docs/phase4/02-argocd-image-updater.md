@@ -1,37 +1,42 @@
-# Phase 4: ArgoCD Image Updater
+# Phase 4: ArgoCD Image Updater + Multi-Environment
 
 ## Зачем
 
-ArgoCD Image Updater автоматически отслеживает новые версии Docker образов и обновляет ArgoCD Applications. Это завершает CI/CD pipeline: push tag → build → push image → auto-update deployment.
+ArgoCD Image Updater автоматически отслеживает новые версии Docker образов и обновляет ArgoCD Applications. В комбинации с Matrix Generator обеспечивает автоматический деплой в dev (все версии) и prd (только stable).
 
 ## Архитектура
 
 ```
 GitHub Actions              Docker Hub           ArgoCD Image Updater
      │                          │                        │
-     ├─── push image ───────────►                        │
-     │    shykhov/example-api:0.1.0                      │
+     ├─── push v0.1.0-rc.1 ─────►                        │
      │                          │                        │
      │                          │◄──── poll (2min) ──────┤
      │                          │                        │
-     │                          ├─── new tag found ──────►
+     │                          │    ┌───────────────────┴───────────────────┐
+     │                          │    │                                       │
+     │                          │    ▼                                       ▼
+     │                     DEV constraint: ~0-0              PRD constraint: ~0
+     │                     (includes pre-release)            (stable only)
+     │                          │                                       │
+     │                          ▼                                       │
+     │                     0.1.0-rc.1 ✓                                 │
+     │                          │                                       │
+     │                     Deploy to DEV                          (skip)
+     │                          │
+     ├─── push v0.1.0 ──────────►
+     │                          │
+     │                          │◄──── poll (2min) ──────┤
      │                          │                        │
-     │                                            ┌──────┴──────┐
-     │                                            │  Update     │
-     │                                            │  Application │
-     │                                            │  spec       │
-     │                                            └──────┬──────┘
-     │                                                   │
-     │                                                   ▼
-     │                                            ArgoCD syncs
-     │                                            new image
+     │                          ▼                        ▼
+     │                     DEV: 0.1.0 ✓             PRD: 0.1.0 ✓
+     │                          │                        │
+     │                     Deploy to DEV          Deploy to PRD
 ```
 
-## 1. Установка через ArgoCD (GitOps)
+## 1. Image Updater Application
 
-### Файл манифеста
-
-`example-infrastructure/apps/templates/argocd-image-updater.yaml`:
+`apps/templates/argocd-image-updater.yaml`:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -63,7 +68,7 @@ spec:
         metrics:
           enabled: true
   destination:
-    server: https://kubernetes.default.svc
+    server: {{ .Values.spec.destination.server }}
     namespace: argocd
   syncPolicy:
     automated:
@@ -71,195 +76,212 @@ spec:
       selfHeal: true
 ```
 
-### Helm Chart Info
+## 2. Matrix Generator ApplicationSet
 
-| Параметр | Значение |
-|----------|----------|
-| Repository | `https://argoproj.github.io/argo-helm` |
-| Chart | `argocd-image-updater` |
-| Version | `1.0.1` |
-| App Version | `v1.0.1` |
+Один ApplicationSet создаёт Applications для всех сервисов × всех окружений.
 
-## 2. Аннотации для Applications
-
-Image Updater использует аннотации на ArgoCD Application для конфигурации.
-
-### Базовые аннотации
+`apps/templates/services-appset.yaml`:
 
 ```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
 metadata:
+  name: services
+  namespace: argocd
   annotations:
-    # Образ для отслеживания: alias=registry/image:constraint
-    argocd-image-updater.argoproj.io/image-list: app=docker.io/shykhov/example-api:~0
-
-    # Стратегия обновления
-    argocd-image-updater.argoproj.io/app.update-strategy: semver
-
-    # Helm параметр для тега
-    argocd-image-updater.argoproj.io/app.helm.image-tag: image.tag
-
-    # Метод записи
-    argocd-image-updater.argoproj.io/write-back-method: argocd
+    argocd.argoproj.io/sync-wave: "100"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - matrix:
+        generators:
+          # Environments
+          - list:
+              elements:
+                - env: dev
+                  # ~0-0: includes pre-release versions (0.1.0-rc.1, 0.1.0-beta.2)
+                  imageConstraint: "~0-0"
+                - env: prd
+                  # ~0: stable versions only (0.1.0, 0.2.0)
+                  imageConstraint: "~0"
+          # Services from deployment repository
+          - git:
+              repoURL: {{ .Values.deploy.repoURL }}
+              revision: {{ .Values.deploy.targetRevision }}
+              directories:
+                - path: services/*
+                - path: services/_*
+                  exclude: true
+  template:
+    metadata:
+      name: '{{`{{ .path.basename }}`}}-{{`{{ .env }}`}}'
+      labels:
+        app: '{{`{{ .path.basename }}`}}'
+        env: '{{`{{ .env }}`}}'
+      annotations:
+        # ArgoCD Image Updater
+        argocd-image-updater.argoproj.io/image-list: 'app={{ .Values.dockerhub.username }}/{{`{{ .path.basename }}`}}:{{`{{ .imageConstraint }}`}}'
+        argocd-image-updater.argoproj.io/app.update-strategy: semver
+        argocd-image-updater.argoproj.io/app.helm.image-tag: image.tag
+        argocd-image-updater.argoproj.io/write-back-method: argocd
+    spec:
+      project: default
+      source:
+        repoURL: {{ .Values.deploy.repoURL }}
+        targetRevision: {{ .Values.deploy.targetRevision }}
+        path: '{{`{{ .path.path }}`}}'
+        helm:
+          valueFiles:
+            - values.yaml
+            - 'values-{{`{{ .env }}`}}.yaml'
+          valuesObject:
+            imagePullSecrets:
+              - name: dockerhub-credentials
+      destination:
+        server: {{ .Values.spec.destination.server }}
+        namespace: '{{`{{ .path.basename }}`}}-{{`{{ .env }}`}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        managedNamespaceMetadata:
+          labels:
+            app: '{{`{{ .path.basename }}`}}'
+            env: '{{`{{ .env }}`}}'
+            dockerhub-pull: "true"
+        syncOptions:
+          - CreateNamespace=true
 ```
 
-### Объяснение аннотаций
+## 3. Helm Values Structure
 
-| Аннотация | Описание |
-|-----------|----------|
-| `image-list` | Список образов: `alias=image:constraint` |
-| `update-strategy` | `semver` (по semver), `latest` (по дате), `digest` (по sha) |
-| `helm.image-tag` | Helm параметр для записи тега |
-| `write-back-method` | `argocd` (в spec) или `git` (коммит в репо) |
-
-### Semver Constraints
-
-| Constraint | Описание | Пример |
-|------------|----------|--------|
-| `~0` | Latest patch in 0.x | 0.1.0 → 0.1.5, 0.2.0 |
-| `1.x` | Any 1.x.x | 1.0.0 → 1.5.2 |
-| `1.2.x` | Only 1.2.x patches | 1.2.0 → 1.2.5 |
-| `^1.0` | Compatible with 1.0 | 1.0.0 → 1.9.9 |
-| `>=1.0 <2.0` | Range | 1.0.0 → 1.9.9 |
-
-## 3. ApplicationSet с Image Updater
-
-В `services-appset.yaml` добавлены аннотации:
+### values.yaml (base)
 
 ```yaml
-template:
-  metadata:
-    name: '{{ .path.basename }}'
-    annotations:
-      # Образ: shykhov/<service-name>:~0 (latest 0.x)
-      argocd-image-updater.argoproj.io/image-list: 'app=docker.io/shykhov/{{ .path.basename }}:~0'
-      argocd-image-updater.argoproj.io/app.update-strategy: semver
-      argocd-image-updater.argoproj.io/app.helm.image-tag: image.tag
-      argocd-image-updater.argoproj.io/write-back-method: argocd
+replicaCount: 1
+
+image:
+  repository: username/example-api
+  pullPolicy: IfNotPresent
+  tag: ""
+
+# ... common settings
 ```
 
-### Как это работает
-
-1. ApplicationSet создаёт Application `example-api`
-2. Image Updater видит аннотацию `image-list`
-3. Каждые 2 минуты проверяет Docker Hub на новые теги
-4. При новом теге (например `0.1.1`) обновляет Application spec
-5. ArgoCD синхронизирует deployment с новым образом
-
-## 4. Write-back Methods
-
-### Method: argocd (рекомендуется для начала)
+### values-dev.yaml (dev overrides)
 
 ```yaml
-argocd-image-updater.argoproj.io/write-back-method: argocd
+# Only dev-specific settings. Merged with values.yaml
+# Base values are sufficient for dev - no overrides needed.
 ```
 
-- Обновляет `spec.source.helm.parameters` в Application
-- Никаких коммитов в Git
-- Быстро, просто
-- **Минус:** при ресинке Application тег сбросится
-
-### Method: git (для production)
+### values-prd.yaml (prd overrides)
 
 ```yaml
-argocd-image-updater.argoproj.io/write-back-method: git
-argocd-image-updater.argoproj.io/write-back-target: helmvalues:values.yaml
-argocd-image-updater.argoproj.io/git-branch: master
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
 ```
 
-- Коммитит изменения в Git репозиторий
-- Полный GitOps (всё в Git)
-- Требует настройки SSH/token для push
+## 4. Semver Constraints
 
-## 5. Проверка
+| Constraint | Описание | Примеры |
+|------------|----------|---------|
+| `~0-0` | Все 0.x.x + pre-release | 0.1.0-rc.1, 0.1.0, 0.2.0-beta.1 |
+| `~0` | Только stable 0.x.x | 0.1.0, 0.2.0 (не 0.1.0-rc.1) |
+| `1.x` | Любая 1.x.x | 1.0.0, 1.5.2 |
+| `~1.2` | Только 1.2.x patches | 1.2.0, 1.2.5 |
 
-### После sync
+## 5. Результат
+
+Matrix Generator создаёт:
+
+| Application | Namespace | Image Constraint | Auto-deploy |
+|-------------|-----------|------------------|-------------|
+| `example-api-dev` | `example-api-dev` | `~0-0` | pre-release + stable |
+| `example-api-prd` | `example-api-prd` | `~0` | stable only |
+
+## 6. CI/CD Flow (полный)
+
+```
+1. Developer: git tag v0.1.0-rc.1 && git push --tags
+                    │
+2. GitHub Actions:  ├─► Build multi-platform Docker image
+                    ├─► Push to Docker Hub (0.1.0-rc.1)
+                    │
+3. Image Updater:   ├─► DEV: constraint ~0-0 matches → update
+                    ├─► PRD: constraint ~0 doesn't match → skip
+                    │
+4. ArgoCD:          └─► Sync example-api-dev
+
+--- After testing in DEV ---
+
+5. Developer: git tag v0.1.0 && git push --tags
+                    │
+6. GitHub Actions:  ├─► Build multi-platform Docker image
+                    ├─► Push to Docker Hub (0.1.0)
+                    │
+7. Image Updater:   ├─► DEV: constraint ~0-0 matches → update
+                    ├─► PRD: constraint ~0 matches → update
+                    │
+8. ArgoCD:          └─► Sync both example-api-dev and example-api-prd
+```
+
+## 7. Проверка
 
 ```bash
-# Проверить pod
+# Pods Image Updater
 kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-image-updater
 
 # Логи
 kubectl logs -n argocd -l app.kubernetes.io/name=argocd-image-updater -f
 
-# Список отслеживаемых приложений
-kubectl logs -n argocd -l app.kubernetes.io/name=argocd-image-updater | grep "Processing"
-```
+# Applications
+kubectl get app -n argocd
 
-### Тест обновления
-
-```bash
-# 1. Создать новый тег в example-api
-cd /path/to/example-api
-git tag v0.1.1
-git push origin v0.1.1
-
-# 2. Дождаться GitHub Actions (build + push)
-
-# 3. Через 2 минуты Image Updater обнаружит новый тег
-
-# 4. Проверить Application
-kubectl get app example-api -n argocd -o yaml | grep -A5 "helm:"
+# Проверить аннотации
+kubectl get app example-api-dev -n argocd -o jsonpath='{.metadata.annotations}' | jq
 ```
 
 ## Troubleshooting
 
 ### Image Updater не видит приложение
 
-```bash
-# Проверить аннотации
-kubectl get app example-api -n argocd -o jsonpath='{.metadata.annotations}'
-```
-
-Должна быть аннотация `argocd-image-updater.argoproj.io/image-list`.
+Проверь аннотацию `argocd-image-updater.argoproj.io/image-list`.
 
 ### Не находит новые теги
 
 ```bash
-# Тест подключения к registry
 kubectl exec -n argocd deploy/argocd-image-updater -- \
-  argocd-image-updater test docker.io/shykhov/example-api
+  argocd-image-updater test docker.io/username/example-api
 ```
 
-### Rate limiting Docker Hub
+### 401 Unauthorized при pull
 
-Для anonymous: 100 pulls/6 hours. Решение — добавить credentials:
+Проверь:
+1. Namespace label `dockerhub-pull: "true"`
+2. ClusterExternalSecret создал secret в namespace
+3. Doppler содержит `DOCKERHUB_USERNAME` и `DOCKERHUB_PULL_TOKEN`
 
-```yaml
-config:
-  registries:
-    - name: Docker Hub
-      api_url: https://registry-1.docker.io
-      prefix: docker.io
-      credentials: pullsecret:argocd/dockerhub-creds
-```
-
-## Итоговая структура
-
-```
-example-infrastructure/apps/templates/
-├── argocd-image-updater.yaml  # Wave 7
-└── services-appset.yaml       # Wave 100, с аннотациями Image Updater
-```
-
-## CI/CD Flow (полный)
-
-```
-1. Developer: git tag v0.1.1 && git push --tags
-                    │
-2. GitHub Actions:  ├─► Build Docker image
-                    ├─► Push to Docker Hub (0.1.1, 0.1, latest)
-                    │
-3. Image Updater:   ├─► Poll Docker Hub (каждые 2 мин)
-                    ├─► Найден новый тег 0.1.1
-                    ├─► Update Application spec
-                    │
-4. ArgoCD:          └─► Sync deployment с новым образом
+```bash
+kubectl get ns example-api-dev --show-labels
+kubectl get externalsecret -n example-api-dev
+kubectl get secret dockerhub-credentials -n example-api-dev
 ```
 
 ## Следующий шаг
 
-Тест полного цикла CI/CD:
-1. Commit и push в example-api
-2. Создать тег и push
-3. Дождаться GitHub Actions
-4. Проверить автообновление в кластере
+Phase 5: Networking (Traefik, Tailscale Operator)
