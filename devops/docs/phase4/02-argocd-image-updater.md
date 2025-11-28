@@ -111,6 +111,10 @@ metadata:
   name: example-api
 spec:
   namespace: argocd
+  writeBackConfig:
+    method: "git:secret:argocd/repo-example-deploy"
+    gitConfig:
+      branch: master
   applicationRefs:
     # DEV: includes pre-release versions (0.1.0-rc.1, 0.1.0-beta.2)
     - namePattern: "example-api-dev"
@@ -135,6 +139,19 @@ spec:
               name: "image.repository"
               tag: "image.tag"
 ```
+
+### Write-Back Methods
+
+| Method | Описание | Persistence |
+|--------|----------|-------------|
+| `argocd` (default) | Обновляет Application params в кластере | Не persistent, теряется при sync |
+| `git` | Коммитит в Git репозиторий | Persistent, true GitOps |
+
+**Git write-back создаёт файлы:**
+- `.argocd-source-example-api-dev.yaml`
+- `.argocd-source-example-api-prd.yaml`
+
+ArgoCD автоматически мержит эти файлы поверх `values.yaml` при рендеринге.
 
 ## 3. Application для деплоя CRs
 
