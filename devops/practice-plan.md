@@ -61,10 +61,18 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 | Docker Credentials | 6 | Pull из DockerHub |
 
 ## Фаза 4: CI/CD Automation
-- [ ] GitHub Actions для example-api (build + push Docker image)
-- [ ] ArgoCD Image Updater
-- [ ] Аннотации для автообновления образов
+- [ ] Docker Hub Access Token (Read & Write) для GitHub Actions
+- [ ] GitHub Secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`
+- [ ] GitHub Actions workflow для example-api (build + push Docker image)
+- [ ] ArgoCD Image Updater (через GitOps, Helm chart)
+- [ ] Аннотации для автообновления образов в ApplicationSet
 - [ ] Тест: push tag → автодеплой
+
+Дока: [docs/phase4/](docs/phase4/)
+
+| Компонент | Wave | Назначение |
+|-----------|------|------------|
+| ArgoCD Image Updater | 7 | Автообновление образов |
 
 ## Фаза 5: Networking
 - [ ] Traefik
