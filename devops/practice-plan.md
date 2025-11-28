@@ -60,19 +60,23 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 | ClusterSecretStores | 5 | Подключение к Doppler |
 | Docker Credentials | 6 | Pull из DockerHub |
 
-## Фаза 4: CI/CD Automation
-- [ ] Docker Hub Access Token (Read & Write) для GitHub Actions
-- [ ] GitHub Secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`
-- [ ] GitHub Actions workflow для example-api (build + push Docker image)
-- [ ] ArgoCD Image Updater (через GitOps, Helm chart)
-- [ ] Аннотации для автообновления образов в ApplicationSet
-- [ ] Тест: push tag → автодеплой
+## Фаза 4: CI/CD Automation ✅
+- [x] Docker Hub Access Token (Read & Write) для GitHub Actions
+- [x] GitHub Secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`
+- [x] GitHub Actions workflow для example-api (build + push Docker image)
+- [x] ArgoCD Image Updater (через GitOps, Helm chart v1.0.1)
+- [x] ImageUpdater CRD (v1.0+ миграция с аннотаций)
+- [x] Git write-back (коммиты в .argocd-source-*.yaml)
+- [x] Тест: push tag → автодеплой (dev: ~0-0, prd: ~0)
+- [x] HPA template (autoscaling/v2)
+- [x] SecurityContext (runAsNonRoot, capabilities drop ALL)
 
 Дока: [docs/phase4/](docs/phase4/)
 
 | Компонент | Wave | Назначение |
 |-----------|------|------------|
 | ArgoCD Image Updater | 7 | Автообновление образов |
+| ImageUpdater Config | 8 | CRD конфигурация |
 
 ## Фаза 5: Networking
 - [ ] Traefik
