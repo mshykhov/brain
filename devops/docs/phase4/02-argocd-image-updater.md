@@ -1,8 +1,8 @@
-# Phase 4: ArgoCD Image Updater + Multi-Environment
+# Phase 4: ArgoCD Image Updater
 
 ## Зачем
 
-ArgoCD Image Updater автоматически отслеживает новые версии Docker образов и обновляет ArgoCD Applications. В комбинации с Matrix Generator обеспечивает автоматический деплой в dev (все версии) и prd (только stable).
+ArgoCD Image Updater автоматически отслеживает новые версии Docker образов и обновляет ArgoCD Applications. Обеспечивает автоматический деплой в dev (все версии включая pre-release) и prd (только stable).
 
 ## Архитектура
 
@@ -34,7 +34,30 @@ GitHub Actions              Docker Hub           ArgoCD Image Updater
      │                     Deploy to DEV          Deploy to PRD
 ```
 
-## 1. Image Updater Application
+## v1.0+ Breaking Change
+
+**Image Updater v1.0+ использует CRD (`ImageUpdater`) вместо аннотаций на Applications.**
+
+Docs: https://argocd-image-updater.readthedocs.io/en/stable/configuration/migration/
+
+## Структура файлов
+
+```
+example-infrastructure/
+├── apps/templates/
+│   ├── argocd-image-updater.yaml    # Helm chart (wave 7)
+│   ├── image-updater-config.yaml    # Application для CRs (wave 8)
+│   └── services-appset.yaml         # ApplicationSet (без аннотаций!)
+└── manifests/
+    ├── infra/
+    │   └── docker-credentials/
+    │       └── dockerhub.yaml       # ClusterExternalSecret
+    └── apps/
+        └── image-updater/
+            └── example-api.yaml     # ImageUpdater CR
+```
+
+## 1. Image Updater Helm Chart
 
 `apps/templates/argocd-image-updater.yaml`:
 
@@ -64,6 +87,7 @@ spec:
               ping: yes
               defaultns: library
               default: true
+              credentials: pullsecret:argocd/dockerhub-credentials
           log.level: info
         metrics:
           enabled: true
@@ -76,127 +100,113 @@ spec:
       selfHeal: true
 ```
 
-## 2. Matrix Generator ApplicationSet
+## 2. ImageUpdater CR
 
-Один ApplicationSet создаёт Applications для всех сервисов × всех окружений.
+`manifests/apps/image-updater/example-api.yaml`:
 
-`apps/templates/services-appset.yaml`:
+```yaml
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: example-api
+spec:
+  namespace: argocd
+  applicationRefs:
+    # DEV: includes pre-release versions (0.1.0-rc.1, 0.1.0-beta.2)
+    - namePattern: "example-api-dev"
+      images:
+        - alias: "app"
+          imageName: "shykhovmyron/example-api:~0-0"
+          commonUpdateSettings:
+            updateStrategy: "semver"
+          manifestTargets:
+            helm:
+              name: "image.repository"
+              tag: "image.tag"
+    # PRD: stable versions only (0.1.0, 0.2.0)
+    - namePattern: "example-api-prd"
+      images:
+        - alias: "app"
+          imageName: "shykhovmyron/example-api:~0"
+          commonUpdateSettings:
+            updateStrategy: "semver"
+          manifestTargets:
+            helm:
+              name: "image.repository"
+              tag: "image.tag"
+```
+
+## 3. Application для деплоя CRs
+
+`apps/templates/image-updater-config.yaml`:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
+kind: Application
 metadata:
-  name: services
+  name: image-updater-config
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/sync-wave: "8"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
-  goTemplate: true
-  goTemplateOptions: ["missingkey=error"]
-  generators:
-    - matrix:
-        generators:
-          # Environments
-          - list:
-              elements:
-                - env: dev
-                  # ~0-0: includes pre-release versions (0.1.0-rc.1, 0.1.0-beta.2)
-                  imageConstraint: "~0-0"
-                - env: prd
-                  # ~0: stable versions only (0.1.0, 0.2.0)
-                  imageConstraint: "~0"
-          # Services from deployment repository
-          - git:
-              repoURL: {{ .Values.deploy.repoURL }}
-              revision: {{ .Values.deploy.targetRevision }}
-              directories:
-                - path: services/*
-                - path: services/_*
-                  exclude: true
-  template:
-    metadata:
-      name: '{{`{{ .path.basename }}`}}-{{`{{ .env }}`}}'
-      labels:
-        app: '{{`{{ .path.basename }}`}}'
-        env: '{{`{{ .env }}`}}'
-      annotations:
-        # ArgoCD Image Updater
-        argocd-image-updater.argoproj.io/image-list: 'app={{ .Values.dockerhub.username }}/{{`{{ .path.basename }}`}}:{{`{{ .imageConstraint }}`}}'
-        argocd-image-updater.argoproj.io/app.update-strategy: semver
-        argocd-image-updater.argoproj.io/app.helm.image-tag: image.tag
-        argocd-image-updater.argoproj.io/write-back-method: argocd
-    spec:
-      project: default
-      source:
-        repoURL: {{ .Values.deploy.repoURL }}
-        targetRevision: {{ .Values.deploy.targetRevision }}
-        path: '{{`{{ .path.path }}`}}'
-        helm:
-          valueFiles:
-            - values.yaml
-            - 'values-{{`{{ .env }}`}}.yaml'
-          valuesObject:
-            imagePullSecrets:
-              - name: dockerhub-credentials
-      destination:
-        server: {{ .Values.spec.destination.server }}
-        namespace: '{{`{{ .path.basename }}`}}-{{`{{ .env }}`}}'
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        managedNamespaceMetadata:
-          labels:
-            app: '{{`{{ .path.basename }}`}}'
-            env: '{{`{{ .env }}`}}'
-            dockerhub-pull: "true"
-        syncOptions:
-          - CreateNamespace=true
+  project: default
+  source:
+    repoURL: {{ .Values.spec.source.repoURL }}
+    targetRevision: {{ .Values.spec.source.targetRevision }}
+    path: manifests/apps/image-updater
+  destination:
+    server: {{ .Values.spec.destination.server }}
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
 ```
 
-## 3. Helm Values Structure
+## 4. Docker Hub Credentials
 
-### values.yaml (base)
+`manifests/infra/docker-credentials/dockerhub.yaml`:
 
 ```yaml
-replicaCount: 1
-
-image:
-  repository: username/example-api
-  pullPolicy: IfNotPresent
-  tag: ""
-
-# ... common settings
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: dockerhub-credentials
+spec:
+  externalSecretName: dockerhub-credentials
+  namespaceSelectors:
+    - matchLabels:
+        dockerhub-pull: "true"
+  refreshTime: "1m"
+  externalSecretSpec:
+    secretStoreRef:
+      name: doppler-shared
+      kind: ClusterSecretStore
+    refreshInterval: "1m"
+    target:
+      name: dockerhub-credentials
+      creationPolicy: Owner
+      template:
+        type: kubernetes.io/dockerconfigjson
+        data:
+          .dockerconfigjson: |
+            {"auths":{"https://index.docker.io/v1/":{"username":"{{ .username }}","password":"{{ .password }}","auth":"{{ printf "%s:%s" .username .password | b64enc }}"},"https://registry-1.docker.io":{"username":"{{ .username }}","password":"{{ .password }}","auth":"{{ printf "%s:%s" .username .password | b64enc }}"}}}
+    data:
+      - secretKey: username
+        remoteRef:
+          key: DOCKERHUB_USERNAME
+      - secretKey: password
+        remoteRef:
+          key: DOCKERHUB_PULL_TOKEN
 ```
 
-### values-dev.yaml (dev overrides)
+**Важно:** Два URL в auths:
+- `https://index.docker.io/v1/` - для Kubernetes imagePullSecrets
+- `https://registry-1.docker.io` - для Image Updater API
 
-```yaml
-# Only dev-specific settings. Merged with values.yaml
-# Base values are sufficient for dev - no overrides needed.
-```
-
-### values-prd.yaml (prd overrides)
-
-```yaml
-replicaCount: 2
-
-resources:
-  requests:
-    cpu: 200m
-    memory: 512Mi
-  limits:
-    cpu: 1000m
-    memory: 1Gi
-
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 5
-  targetCPUUtilizationPercentage: 70
-```
-
-## 4. Semver Constraints
+## 5. Semver Constraints
 
 | Constraint | Описание | Примеры |
 |------------|----------|---------|
@@ -205,16 +215,7 @@ autoscaling:
 | `1.x` | Любая 1.x.x | 1.0.0, 1.5.2 |
 | `~1.2` | Только 1.2.x patches | 1.2.0, 1.2.5 |
 
-## 5. Результат
-
-Matrix Generator создаёт:
-
-| Application | Namespace | Image Constraint | Auto-deploy |
-|-------------|-----------|------------------|-------------|
-| `example-api-dev` | `example-api-dev` | `~0-0` | pre-release + stable |
-| `example-api-prd` | `example-api-prd` | `~0` | stable only |
-
-## 6. CI/CD Flow (полный)
+## 6. CI/CD Flow
 
 ```
 1. Developer: git tag v0.1.0-rc.1 && git push --tags
@@ -240,46 +241,75 @@ Matrix Generator создаёт:
 8. ArgoCD:          └─► Sync both example-api-dev and example-api-prd
 ```
 
-## 7. Проверка
+## Troubleshooting
+
+### Проверка статуса
 
 ```bash
-# Pods Image Updater
+# Image Updater pods
 kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-image-updater
 
 # Логи
 kubectl logs -n argocd -l app.kubernetes.io/name=argocd-image-updater -f
 
+# ImageUpdater CRs
+kubectl get imageupdater -n argocd
+
 # Applications
 kubectl get app -n argocd
-
-# Проверить аннотации
-kubectl get app example-api-dev -n argocd -o jsonpath='{.metadata.annotations}' | jq
 ```
 
-## Troubleshooting
+### "No ImageUpdater CRs to process"
 
-### Image Updater не видит приложение
+v1.0+ требует ImageUpdater CR. Аннотации на Applications больше не работают.
 
-Проверь аннотацию `argocd-image-updater.argoproj.io/image-list`.
+```bash
+# Проверить что CR существует
+kubectl get imageupdater -n argocd
+```
 
-### Не находит новые теги
+### 401 Unauthorized / incorrect username or password
+
+1. Проверь секрет в argocd namespace:
+```bash
+kubectl get secret dockerhub-credentials -n argocd
+kubectl get secret dockerhub-credentials -n argocd -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d | jq .
+```
+
+2. Проверь что оба URL есть в auths:
+   - `https://index.docker.io/v1/`
+   - `https://registry-1.docker.io`
+
+3. Проверь credentials локально:
+```bash
+docker login -u USERNAME -p TOKEN
+```
+
+4. Проверь ConfigMap:
+```bash
+kubectl get configmap argocd-image-updater-config -n argocd -o yaml
+```
+
+5. Рестартни Image Updater после изменения секрета:
+```bash
+kubectl rollout restart deployment argocd-image-updater -n argocd
+```
+
+### "no valid auth entry for registry"
+
+Секрет не содержит нужный registry URL. Добавь `https://registry-1.docker.io` в dockerconfigjson.
+
+### Image Updater не подхватывает новый секрет
+
+```bash
+kubectl rollout restart deployment argocd-image-updater -n argocd
+```
+
+### Проверить registry connectivity
 
 ```bash
 kubectl exec -n argocd deploy/argocd-image-updater -- \
   argocd-image-updater test docker.io/username/example-api
-```
-
-### 401 Unauthorized при pull
-
-Проверь:
-1. Namespace label `dockerhub-pull: "true"`
-2. ClusterExternalSecret создал secret в namespace
-3. Doppler содержит `DOCKERHUB_USERNAME` и `DOCKERHUB_PULL_TOKEN`
-
-```bash
-kubectl get ns example-api-dev --show-labels
-kubectl get externalsecret -n example-api-dev
-kubectl get secret dockerhub-credentials -n example-api-dev
 ```
 
 ## Следующий шаг
