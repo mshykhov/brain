@@ -44,13 +44,21 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 
 > **Примечание:** Pod в статусе `ImagePullBackOff` — это ожидаемо! Docker образ ещё не существует и credentials не настроены. Исправим в Фазе 3-4.
 
-## Фаза 3: Secrets
-- [ ] Doppler аккаунт (бесплатный Developer план)
-- [ ] Создать проект `example` и config `dev` в Doppler
-- [ ] External Secrets Operator (через ArgoCD)
-- [ ] Doppler Service Token → K8s Secret (вручную, один раз)
-- [ ] ClusterSecretStore → Doppler
-- [ ] Docker Registry credentials через ESO
+## Фаза 3: Secrets ✅
+- [x] Doppler аккаунт (бесплатный Developer план)
+- [x] Создать проект `example` и configs (`shared`, `dev`) в Doppler
+- [x] External Secrets Operator 1.1.0 (через ArgoCD)
+- [x] Doppler Service Tokens → K8s Secrets (`doppler-token-shared`, `doppler-token-dev`)
+- [x] ClusterSecretStores (`doppler-shared`, `doppler-dev`)
+- [x] ClusterExternalSecret для DockerHub credentials
+
+Дока: [docs/phase3/](docs/phase3/)
+
+| Компонент | Wave | Назначение |
+|-----------|------|------------|
+| External Secrets Operator | 4 | Синхронизация секретов |
+| ClusterSecretStores | 5 | Подключение к Doppler |
+| Docker Credentials | 6 | Pull из DockerHub |
 
 ## Фаза 4: CI/CD Automation
 - [ ] GitHub Actions для example-api (build + push Docker image)
