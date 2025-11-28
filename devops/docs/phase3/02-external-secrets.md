@@ -23,7 +23,7 @@ spec:
   source:
     repoURL: https://charts.external-secrets.io
     chart: external-secrets
-    targetRevision: "0.15.1"
+    targetRevision: "1.1.0"
     helm:
       values: |
         installCRDs: true
