@@ -10,7 +10,7 @@ Docs:
 
 Open: https://login.tailscale.com/admin/acls
 
-Replace your policy file with this configuration (or merge carefully):
+**IMPORTANT:** Keep existing `acls` section for device-to-device access! Only add/merge these sections:
 
 ```json
 {
@@ -18,6 +18,13 @@ Replace your policy file with this configuration (or merge carefully):
     "tag:k8s-operator": ["autogroup:admin"],
     "tag:k8s": ["tag:k8s-operator"]
   },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["*"],
+      "dst": ["*:*"]
+    }
+  ],
   "grants": [
     {
       "src": ["autogroup:admin"],
@@ -36,9 +43,19 @@ Replace your policy file with this configuration (or merge carefully):
       "dst": ["tag:k8s"],
       "ip": ["*:443"]
     }
+  ],
+  "ssh": [
+    {
+      "action": "check",
+      "src": ["autogroup:member"],
+      "dst": ["autogroup:self"],
+      "users": ["autogroup:nonroot", "root"]
+    }
   ]
 }
 ```
+
+**WARNING:** Without `acls` section you will lose SSH access to your servers!
 
 ### Configuration Explained:
 
