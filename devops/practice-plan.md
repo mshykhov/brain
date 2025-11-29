@@ -79,29 +79,33 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 | ImageUpdater Config | 8 | CRD конфигурация |
 
 ## Фаза 5: Networking
-- [ ] Traefik Ingress Controller (wave 9)
-- [ ] cert-manager (wave 10)
-- [ ] Tailscale Operator (wave 11)
-- [ ] Tailscale Ingresses для admin UIs (wave 12)
+- [x] Tailscale Operator (wave 9-10) — kubectl через Tailscale
+- [x] Tailscale Ingresses для admin UIs (wave 11)
+- [ ] Traefik Ingress Controller (wave 12)
+- [ ] cert-manager (wave 13)
 
 Дока: [docs/phase5/](docs/phase5/)
 
 | Компонент | Версия | Wave | Назначение |
 |-----------|--------|------|------------|
-| Traefik | 37.4.0 | 9 | Ingress Controller |
-| cert-manager | 1.19.1 | 10 | TLS certificates |
-| Tailscale Operator | 1.90.9 | 11 | Private networking |
-| Tailscale Ingresses | - | 12 | Admin UIs access |
+| Tailscale Credentials | - | 9 | ExternalSecret для OAuth |
+| Tailscale Operator | 1.90.9 | 10 | API Server Proxy (kubectl) |
+| Tailscale Ingresses | - | 11 | Admin UIs (ArgoCD, Longhorn) |
+| Traefik | TBD | 12 | Public Ingress Controller |
+| cert-manager | TBD | 13 | TLS certificates |
 
-**Prerequisites:**
-1. Tailscale ACL: добавить `tag:k8s-operator` и `tag:k8s`
-2. Tailscale OAuth client (Devices Core, Auth Keys, Services Write)
-3. Doppler secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET`
+**Prerequisites (выполнено):**
+1. ✅ Tailscale ACL: `tagOwners`, `acls`, `grants`, `ssh` секции
+2. ✅ Tailscale OAuth client (Devices Core, Auth Keys, Services Write)
+3. ✅ HTTPS Certificates и MagicDNS enabled
+4. ✅ Doppler secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET`
 
-**Access после синхронизации:**
-- https://argocd (через Tailscale)
-- https://longhorn (через Tailscale)
-- https://traefik (через Tailscale)
+**Важно:** ACL должен содержать `acls` секцию, иначе потеряется SSH доступ!
+
+**Access (работает):**
+- `tailscale configure kubeconfig tailscale-operator` → kubectl
+- https://argocd.tail876052.ts.net (ArgoCD UI)
+- https://longhorn.tail876052.ts.net (Longhorn UI)
 
 ## Фаза 6: Data
 - [ ] CloudNativePG operator
