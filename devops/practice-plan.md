@@ -114,7 +114,7 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 │   Traefik Service (loadBalancerClass: tailscale)               │
 │   traefik.tail876052.ts.net                                    │
 │   ├── TLS: certificateResolver: tailscale (auto Let's Encrypt) │
-│   ├── Middleware: traefik-oidc-auth → Auth0                    │
+│   ├── Middleware: ForwardAuth → oauth2-proxy → Auth0           │
 │   └── Routes:                                                  │
 │       ├── longhorn.ts.net → Longhorn UI                        │
 │       ├── prometheus.ts.net → Prometheus                       │
@@ -126,8 +126,8 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 │                                                                 │
 │   Traefik Service (type: LoadBalancer via MetalLB)             │
 │   ├── TLS: cert-manager + Let's Encrypt                        │
-│   ├── Middleware: traefik-oidc-auth → Auth0 (web UI)           │
-│   ├── JWT validation (API)                                     │
+│   ├── Middleware: ForwardAuth → oauth2-proxy → Auth0 (web UI)  │
+│   ├── JWT validation (API endpoints)                           │
 │   └── Routes:                                                  │
 │       └── api.example.com → example-api                        │
 └─────────────────────────────────────────────────────────────────┘
