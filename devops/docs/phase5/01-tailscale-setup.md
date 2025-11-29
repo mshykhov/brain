@@ -29,16 +29,24 @@ Complete [00-prerequisites.md](00-prerequisites.md) first!
 File: `helm-values/network/tailscale-operator.yaml`
 
 ```yaml
-oauth:
-  clientId: ""      # From ExternalSecret
-  clientSecret: ""  # From ExternalSecret
-
 operatorConfig:
   defaultTags:
-    - "tag:k8s"
+    - "tag:k8s-operator"
+  hostname: "tailscale-operator"
+  logging: "info"
+
+proxyConfig:
+  defaultTags: "tag:k8s"
 
 apiServerProxyConfig:
-  mode: "true"  # Enable API Server Proxy for kubectl
+  mode: "true"
+  allowImpersonation: "true"
+
+oauth: {}  # Credentials from external secret
+
+oauthSecretVolume:
+  secret:
+    secretName: tailscale-oauth
 ```
 
 ### ExternalSecret for OAuth

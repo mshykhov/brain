@@ -8,12 +8,35 @@ Traefik v3 as main Ingress Controller for public-facing services.
 
 ## Configuration
 
-Values file: `manifests/helm-values/traefik.yaml`
+Values file: `helm-values/network/traefik.yaml`
+
+```yaml
+service:
+  type: LoadBalancer
+
+ports:
+  web:
+    expose:
+      default: true
+    exposedPort: 80
+  websecure:
+    expose:
+      default: true
+    exposedPort: 443
+
+ingressRoute:
+  dashboard:
+    enabled: false
+
+logs:
+  general:
+    level: INFO
+```
 
 Key settings:
 - LoadBalancer via MetalLB
 - HTTP → HTTPS redirect
-- Prometheus metrics enabled
+- Prometheus metrics enabled (Phase 8)
 - Dashboard disabled (access via Tailscale)
 
 ## Ports

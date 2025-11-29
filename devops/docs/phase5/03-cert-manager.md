@@ -8,7 +8,16 @@ Automates TLS certificate management with Let's Encrypt.
 
 ## Configuration
 
-Values file: `manifests/helm-values/cert-manager.yaml`
+Values file: `helm-values/network/cert-manager.yaml`
+
+```yaml
+crds:
+  enabled: true
+  keep: true
+
+prometheus:
+  enabled: false  # Enable in Phase 8
+```
 
 ## ClusterIssuer (optional)
 
