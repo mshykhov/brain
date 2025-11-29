@@ -145,14 +145,15 @@ Docs:
 
 ## Фаза 6: Centralized Auth (Auth0)
 - [ ] Auth0 аккаунт + tenant
-- [ ] Auth0 Applications (ArgoCD, Traefik, example-api)
+- [ ] Auth0 Application (Regular Web App) для oauth2-proxy
+- [ ] Auth0 Application для ArgoCD (built-in OIDC)
 - [ ] Auth0 API для example-api (JWT validation)
-- [ ] ArgoCD OIDC config (встроенная поддержка)
-- [ ] Traefik OIDC middleware (traefik-oidc-auth plugin)
-- [ ] Longhorn, Prometheus, AlertManager через Traefik ForwardAuth
+- [ ] oauth2-proxy deployment (Helm chart)
+- [ ] Traefik ForwardAuth middleware → oauth2-proxy
+- [ ] ArgoCD OIDC config
 - [ ] Grafana generic_oauth config
 - [ ] example-api: JWT validation в Spring Security
-- [ ] RBAC через Auth0 roles/groups
+- [ ] RBAC через Auth0 roles/permissions
 
 Дока: [docs/phase6/](docs/phase6/)
 
@@ -160,24 +161,41 @@ Docs:
 |-----------|------------------|------------|---------|
 | ArgoCD | ✅ | Built-in OIDC → Auth0 | Tailscale Ingress |
 | Grafana | ✅ | `[auth.generic_oauth]` → Auth0 | Traefik (Tailscale LB) |
-| Longhorn | ❌ | Traefik ForwardAuth → Auth0 | Traefik (Tailscale LB) |
-| Prometheus | ❌ | Traefik ForwardAuth → Auth0 | Traefik (Tailscale LB) |
-| AlertManager | ❌ | Traefik ForwardAuth → Auth0 | Traefik (Tailscale LB) |
-| example-api (web) | - | Traefik OIDC middleware | Traefik (Public LB) |
-| example-api (API) | - | JWT verification | Traefik (Public LB) |
+| Longhorn | ❌ | Traefik ForwardAuth → oauth2-proxy → Auth0 | Traefik (Tailscale LB) |
+| Prometheus | ❌ | Traefik ForwardAuth → oauth2-proxy → Auth0 | Traefik (Tailscale LB) |
+| AlertManager | ❌ | Traefik ForwardAuth → oauth2-proxy → Auth0 | Traefik (Tailscale LB) |
+| example-api (web) | - | Traefik ForwardAuth → oauth2-proxy → Auth0 | Traefik (Public LB) |
+| example-api (API) | - | JWT verification (Spring Security) | Traefik (Public LB) |
+
+**Архитектура oauth2-proxy:**
+```
+User Request → Traefik
+                 │
+                 ▼ ForwardAuth
+         ┌───────────────┐
+         │ oauth2-proxy  │◄──► Auth0
+         │ /oauth2/auth  │
+         └───────┬───────┘
+                 │
+         202 OK ─┴─ 401 → redirect to Auth0 login
+                 │
+                 ▼
+         Backend Service
+```
 
 **Безопасность (3 уровня):**
 1. **Network:** Tailscale (только tailnet devices могут подключиться)
 2. **Transport:** TLS/HTTPS (сертификаты от Tailscale или cert-manager)
-3. **Application:** Auth0 OIDC (identity + authorization)
+3. **Application:** Auth0 OIDC через oauth2-proxy
 
 **Prerequisites:**
 1. Auth0 Free account (до 25K MAU)
-2. Doppler secrets: `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`
+2. Doppler secrets: `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `OAUTH2_PROXY_COOKIE_SECRET`
 
 Docs:
+- https://oauth2-proxy.github.io/oauth2-proxy/
+- https://medium.com/@bdalpe/protecting-kubernetes-ingress-resources-with-traefik-forwardauth-and-oauth2-proxy-a7b3d330f276
 - https://github.com/argoproj/argo-cd/blob/master/docs/operator-manual/user-management/auth0.md
-- https://github.com/sevensolutions/traefik-oidc-auth
 - https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/generic-oauth/
 - https://auth0.com/docs/quickstart/backend/java-spring-security5
 
