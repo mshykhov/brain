@@ -154,20 +154,60 @@ Docs:
 
 **Архитектура:**
 ```
-                    ┌─────────────┐
-                    │   Auth0     │
-                    │  (IdP)      │
-                    └──────┬──────┘
-           ┌───────────────┼───────────────┐
-           ▼               ▼               ▼
-    ┌────────────┐  ┌────────────┐  ┌────────────┐
-    │  ArgoCD    │  │  Traefik   │  │ example-api│
-    │ OIDC Login │  │ OIDC Plugin│  │ JWT Verify │
-    └─────┬──────┘  └─────┬──────┘  └─────┬──────┘
-          │               │               │
-    Tailscale        Tailscale/       Public
-    (private)        Public
+                         ┌─────────────┐
+                         │   Auth0     │
+                         │   (IdP)     │
+                         └──────┬──────┘
+            ┌───────────────────┼───────────────────┐
+            ▼                   ▼                   ▼
+     ┌────────────┐      ┌────────────┐      ┌────────────┐
+     │  ArgoCD    │      │  Traefik   │      │ example-api│
+     │ OIDC Login │      │ OIDC Plugin│      │ JWT Verify │
+     └─────┬──────┘      └─────┬──────┘      └─────┬──────┘
+           │                   │                   │
+    Tailscale Ingress    Tailscale LB         Public LB
+     (argocd.ts.net)    (traefik.ts.net)    (api.example.com)
+           │                   │
+           │            ┌──────┴──────┐
+           │            ▼             ▼
+           │      ┌──────────┐  ┌──────────┐
+           │      │ Longhorn │  │Prometheus│
+           │      └──────────┘  └──────────┘
+           ▼
+    ArgoCD has built-in OIDC,
+    no middleware needed
 ```
+
+**Ключевой момент:**
+- Traefik как LoadBalancer через Tailscale (`loadBalancerClass: tailscale`)
+- ForwardAuth middleware работает внутри Traefik
+- Сервисы без OIDC (Longhorn, Prometheus) защищены через Traefik middleware
+
+**TLS/HTTPS:**
+- Traefik имеет встроенный `certificateResolver: tailscale`
+- Сертификаты от Tailscale (Let's Encrypt) — автоматически
+- cert-manager НЕ нужен для internal сервисов (только для public)
+
+```yaml
+# Traefik config
+certificatesResolvers:
+  tailscale:
+    tailscale: {}
+
+# IngressRoute
+tls:
+  certResolver: tailscale
+```
+
+**Безопасность (3 уровня):**
+1. Network: Tailscale (только tailnet devices)
+2. Transport: TLS/HTTPS (сертификаты от Tailscale)
+3. Application: Auth0 OIDC (identity verification)
+
+Docs:
+- https://doc.traefik.io/traefik/reference/install-configuration/tls/certificate-resolvers/tailscale/
+- https://traefik.io/blog/exploring-the-tailscale-traefik-proxy-integration
+- https://joshrnoll.com/using-traefik-on-kubernetes-over-tailscale/
 
 **Prerequisites:**
 1. Auth0 Free account (до 25K MAU)
