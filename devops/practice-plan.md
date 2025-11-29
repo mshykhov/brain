@@ -78,11 +78,11 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 | ArgoCD Image Updater | 7 | Автообновление образов |
 | ImageUpdater Config | 8 | CRD конфигурация |
 
-## Фаза 5: Networking
+## Фаза 5: Networking ✅
 - [x] Tailscale Operator (wave 9-10) — kubectl через Tailscale
-- [x] Tailscale Ingresses для admin UIs (wave 11)
-- [ ] Traefik Ingress Controller (wave 12)
-- [ ] cert-manager (wave 13)
+- [x] Tailscale Ingress для ArgoCD (wave 11) — built-in OIDC
+- [ ] Traefik Ingress Controller (wave 12) — public + internal via Tailscale LB
+- [ ] cert-manager (wave 13) — только для public сервисов
 
 Дока: [docs/phase5/](docs/phase5/)
 
@@ -90,45 +90,58 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 |-----------|--------|------|------------|
 | Tailscale Credentials | - | 9 | ExternalSecret для OAuth |
 | Tailscale Operator | 1.90.9 | 10 | API Server Proxy (kubectl) |
-| Tailscale Ingresses | - | 11 | Admin UIs (ArgoCD, Longhorn) |
-| Traefik | TBD | 12 | Public Ingress Controller |
-| cert-manager | TBD | 13 | TLS certificates |
+| Tailscale Ingress (ArgoCD) | - | 11 | ArgoCD UI (has built-in OIDC) |
+| Traefik | TBD | 12 | Ingress Controller (public + internal) |
+| cert-manager | TBD | 13 | TLS для public сервисов |
 
-**Prerequisites (выполнено):**
-1. ✅ Tailscale ACL: `tagOwners`, `acls`, `grants`, `ssh` секции
-2. ✅ Tailscale OAuth client (Devices Core, Auth Keys, Services Write)
+**Tailscale Prerequisites (выполнено):**
+1. ✅ ACL: `tagOwners`, `acls`, `grants`, `ssh` секции
+2. ✅ OAuth client (Devices Core, Auth Keys, Services Write)
 3. ✅ HTTPS Certificates и MagicDNS enabled
-4. ✅ Doppler secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET`
+4. ✅ Doppler: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET`
 
 **Важно:** ACL должен содержать `acls` секцию, иначе потеряется SSH доступ!
 
 **Access (работает):**
 - `tailscale configure kubeconfig tailscale-operator` → kubectl
 - https://argocd.tail876052.ts.net (ArgoCD UI)
-- https://longhorn.tail876052.ts.net (Longhorn UI)
 
-**Будущее улучшение — Centralized Auth (Auth0 + Traefik OIDC):**
+**Traefik архитектура:**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         TAILNET (private)                       │
+│                                                                 │
+│   Traefik Service (loadBalancerClass: tailscale)               │
+│   traefik.tail876052.ts.net                                    │
+│   ├── TLS: certificateResolver: tailscale (auto Let's Encrypt) │
+│   ├── Middleware: traefik-oidc-auth → Auth0                    │
+│   └── Routes:                                                  │
+│       ├── longhorn.ts.net → Longhorn UI                        │
+│       ├── prometheus.ts.net → Prometheus                       │
+│       └── alertmanager.ts.net → AlertManager                   │
+└─────────────────────────────────────────────────────────────────┘
 
-Варианты:
-1. **traefik-oidc-auth plugin** — бесплатный OIDC плагин для Traefik
-2. **ForwardAuth middleware** — делегирует auth внешнему сервису
-3. **Traefik Hub OIDC** — только платная версия
+┌─────────────────────────────────────────────────────────────────┐
+│                         INTERNET (public)                       │
+│                                                                 │
+│   Traefik Service (type: LoadBalancer via MetalLB)             │
+│   ├── TLS: cert-manager + Let's Encrypt                        │
+│   ├── Middleware: traefik-oidc-auth → Auth0 (web UI)           │
+│   ├── JWT validation (API)                                     │
+│   └── Routes:                                                  │
+│       └── api.example.com → example-api                        │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-Рекомендуется: `traefik-oidc-auth` + Auth0 (бесплатно до 25K MAU)
-
-Преимущества:
-- Единая точка управления доступом (Auth0 dashboard)
-- Role-based access через claims (`groups: admin`)
-- Один middleware для всех admin UI
-
-Требования:
-- Переключить admin UI с Tailscale Ingress на Traefik IngressRoute
-- Auth0 аккаунт + Application (Regular Web App)
-- Doppler secrets: `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `OIDC_SECRET`
+**TLS стратегия:**
+| Network | TLS Provider | Как |
+|---------|--------------|-----|
+| Tailscale (internal) | Traefik + Tailscale cert resolver | Автоматически от Tailscale |
+| Public (internet) | Traefik + cert-manager | Let's Encrypt ACME |
 
 Docs:
-- https://github.com/sevensolutions/traefik-oidc-auth
-- https://auth0.com/docs/get-started
+- https://doc.traefik.io/traefik/reference/install-configuration/tls/certificate-resolvers/tailscale/
+- https://tailscale.com/kb/1439/kubernetes-operator-cluster-ingress
 
 ## Фаза 6: Centralized Auth (Auth0)
 - [ ] Auth0 аккаунт + tenant
@@ -136,7 +149,8 @@ Docs:
 - [ ] Auth0 API для example-api (JWT validation)
 - [ ] ArgoCD OIDC config (встроенная поддержка)
 - [ ] Traefik OIDC middleware (traefik-oidc-auth plugin)
-- [ ] Longhorn через Traefik ForwardAuth
+- [ ] Longhorn, Prometheus, AlertManager через Traefik ForwardAuth
+- [ ] Grafana generic_oauth config
 - [ ] example-api: JWT validation в Spring Security
 - [ ] RBAC через Auth0 roles/groups
 
@@ -144,70 +158,18 @@ Docs:
 
 | Компонент | Встроенный OIDC? | Auth метод | Network |
 |-----------|------------------|------------|---------|
-| ArgoCD | ✅ | Built-in OIDC → Auth0 | Tailscale |
-| Grafana | ✅ | `[auth.generic_oauth]` → Auth0 | Tailscale |
-| Longhorn | ❌ | Traefik ForwardAuth → Auth0 | Tailscale |
-| Prometheus | ❌ | Traefik ForwardAuth → Auth0 | Tailscale |
-| AlertManager | ❌ | Traefik ForwardAuth → Auth0 | Tailscale |
-| example-api (web) | - | Traefik OIDC middleware | Public |
-| example-api (API) | - | JWT verification | Public |
-
-**Архитектура:**
-```
-                         ┌─────────────┐
-                         │   Auth0     │
-                         │   (IdP)     │
-                         └──────┬──────┘
-            ┌───────────────────┼───────────────────┐
-            ▼                   ▼                   ▼
-     ┌────────────┐      ┌────────────┐      ┌────────────┐
-     │  ArgoCD    │      │  Traefik   │      │ example-api│
-     │ OIDC Login │      │ OIDC Plugin│      │ JWT Verify │
-     └─────┬──────┘      └─────┬──────┘      └─────┬──────┘
-           │                   │                   │
-    Tailscale Ingress    Tailscale LB         Public LB
-     (argocd.ts.net)    (traefik.ts.net)    (api.example.com)
-           │                   │
-           │            ┌──────┴──────┐
-           │            ▼             ▼
-           │      ┌──────────┐  ┌──────────┐
-           │      │ Longhorn │  │Prometheus│
-           │      └──────────┘  └──────────┘
-           ▼
-    ArgoCD has built-in OIDC,
-    no middleware needed
-```
-
-**Ключевой момент:**
-- Traefik как LoadBalancer через Tailscale (`loadBalancerClass: tailscale`)
-- ForwardAuth middleware работает внутри Traefik
-- Сервисы без OIDC (Longhorn, Prometheus) защищены через Traefik middleware
-
-**TLS/HTTPS:**
-- Traefik имеет встроенный `certificateResolver: tailscale`
-- Сертификаты от Tailscale (Let's Encrypt) — автоматически
-- cert-manager НЕ нужен для internal сервисов (только для public)
-
-```yaml
-# Traefik config
-certificatesResolvers:
-  tailscale:
-    tailscale: {}
-
-# IngressRoute
-tls:
-  certResolver: tailscale
-```
+| ArgoCD | ✅ | Built-in OIDC → Auth0 | Tailscale Ingress |
+| Grafana | ✅ | `[auth.generic_oauth]` → Auth0 | Traefik (Tailscale LB) |
+| Longhorn | ❌ | Traefik ForwardAuth → Auth0 | Traefik (Tailscale LB) |
+| Prometheus | ❌ | Traefik ForwardAuth → Auth0 | Traefik (Tailscale LB) |
+| AlertManager | ❌ | Traefik ForwardAuth → Auth0 | Traefik (Tailscale LB) |
+| example-api (web) | - | Traefik OIDC middleware | Traefik (Public LB) |
+| example-api (API) | - | JWT verification | Traefik (Public LB) |
 
 **Безопасность (3 уровня):**
-1. Network: Tailscale (только tailnet devices)
-2. Transport: TLS/HTTPS (сертификаты от Tailscale)
-3. Application: Auth0 OIDC (identity verification)
-
-Docs:
-- https://doc.traefik.io/traefik/reference/install-configuration/tls/certificate-resolvers/tailscale/
-- https://traefik.io/blog/exploring-the-tailscale-traefik-proxy-integration
-- https://joshrnoll.com/using-traefik-on-kubernetes-over-tailscale/
+1. **Network:** Tailscale (только tailnet devices могут подключиться)
+2. **Transport:** TLS/HTTPS (сертификаты от Tailscale или cert-manager)
+3. **Application:** Auth0 OIDC (identity + authorization)
 
 **Prerequisites:**
 1. Auth0 Free account (до 25K MAU)
@@ -216,6 +178,7 @@ Docs:
 Docs:
 - https://github.com/argoproj/argo-cd/blob/master/docs/operator-manual/user-management/auth0.md
 - https://github.com/sevensolutions/traefik-oidc-auth
+- https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/generic-oauth/
 - https://auth0.com/docs/quickstart/backend/java-spring-security5
 
 ## Фаза 7: Data
