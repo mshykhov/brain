@@ -130,23 +130,71 @@ Docs:
 - https://github.com/sevensolutions/traefik-oidc-auth
 - https://auth0.com/docs/get-started
 
-## Фаза 6: Data
+## Фаза 6: Centralized Auth (Auth0)
+- [ ] Auth0 аккаунт + tenant
+- [ ] Auth0 Applications (ArgoCD, Traefik, example-api)
+- [ ] Auth0 API для example-api (JWT validation)
+- [ ] ArgoCD OIDC config (встроенная поддержка)
+- [ ] Traefik OIDC middleware (traefik-oidc-auth plugin)
+- [ ] Longhorn через Traefik ForwardAuth
+- [ ] example-api: JWT validation в Spring Security
+- [ ] RBAC через Auth0 roles/groups
+
+Дока: [docs/phase6/](docs/phase6/)
+
+| Компонент | Встроенный OIDC? | Auth метод | Network |
+|-----------|------------------|------------|---------|
+| ArgoCD | ✅ | Built-in OIDC → Auth0 | Tailscale |
+| Grafana | ✅ | `[auth.generic_oauth]` → Auth0 | Tailscale |
+| Longhorn | ❌ | Traefik ForwardAuth → Auth0 | Tailscale |
+| Prometheus | ❌ | Traefik ForwardAuth → Auth0 | Tailscale |
+| AlertManager | ❌ | Traefik ForwardAuth → Auth0 | Tailscale |
+| example-api (web) | - | Traefik OIDC middleware | Public |
+| example-api (API) | - | JWT verification | Public |
+
+**Архитектура:**
+```
+                    ┌─────────────┐
+                    │   Auth0     │
+                    │  (IdP)      │
+                    └──────┬──────┘
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+    ┌────────────┐  ┌────────────┐  ┌────────────┐
+    │  ArgoCD    │  │  Traefik   │  │ example-api│
+    │ OIDC Login │  │ OIDC Plugin│  │ JWT Verify │
+    └─────┬──────┘  └─────┬──────┘  └─────┬──────┘
+          │               │               │
+    Tailscale        Tailscale/       Public
+    (private)        Public
+```
+
+**Prerequisites:**
+1. Auth0 Free account (до 25K MAU)
+2. Doppler secrets: `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`
+
+Docs:
+- https://github.com/argoproj/argo-cd/blob/master/docs/operator-manual/user-management/auth0.md
+- https://github.com/sevensolutions/traefik-oidc-auth
+- https://auth0.com/docs/quickstart/backend/java-spring-security5
+
+## Фаза 7: Data
 - [ ] CloudNativePG operator
 - [ ] PostgreSQL cluster
 - [ ] Credentials через ESO
 - [ ] Подключить приложение к БД
 
-## Фаза 7: Observability
+## Фаза 8: Observability
 - [ ] kube-prometheus-stack
 - [ ] Loki + Promtail
 - [ ] ServiceMonitor для приложения
 
-## Фаза 8: Backup
+## Фаза 9: Backup
 - [ ] MinIO
 - [ ] Velero
 - [ ] Тест: backup → delete → restore
 
-## Фаза 9: Full Test (dev)
+## Фаза 10: Full Test (dev)
 - [ ] Все pods Running
 - [ ] Приложение отвечает
 - [ ] Секреты синхронизируются
@@ -154,7 +202,7 @@ Docs:
 - [ ] Метрики/логи работают
 - [ ] Backup/restore работает
 
-## Фаза 10: Production Environment
+## Фаза 11: Production Environment
 - [ ] Doppler config `prd` + Service Token
 - [ ] K8s Secret `doppler-token-prd`
 - [ ] ClusterSecretStore `doppler-prd`
