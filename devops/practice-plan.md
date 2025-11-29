@@ -107,6 +107,29 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 - https://argocd.tail876052.ts.net (ArgoCD UI)
 - https://longhorn.tail876052.ts.net (Longhorn UI)
 
+**Будущее улучшение — Centralized Auth (Auth0 + Traefik OIDC):**
+
+Варианты:
+1. **traefik-oidc-auth plugin** — бесплатный OIDC плагин для Traefik
+2. **ForwardAuth middleware** — делегирует auth внешнему сервису
+3. **Traefik Hub OIDC** — только платная версия
+
+Рекомендуется: `traefik-oidc-auth` + Auth0 (бесплатно до 25K MAU)
+
+Преимущества:
+- Единая точка управления доступом (Auth0 dashboard)
+- Role-based access через claims (`groups: admin`)
+- Один middleware для всех admin UI
+
+Требования:
+- Переключить admin UI с Tailscale Ingress на Traefik IngressRoute
+- Auth0 аккаунт + Application (Regular Web App)
+- Doppler secrets: `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `OIDC_SECRET`
+
+Docs:
+- https://github.com/sevensolutions/traefik-oidc-auth
+- https://auth0.com/docs/get-started
+
 ## Фаза 6: Data
 - [ ] CloudNativePG operator
 - [ ] PostgreSQL cluster
