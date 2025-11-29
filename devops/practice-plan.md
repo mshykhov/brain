@@ -79,9 +79,29 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 | ImageUpdater Config | 8 | CRD конфигурация |
 
 ## Фаза 5: Networking
-- [ ] Traefik
-- [ ] Tailscale Operator (Ingress для ArgoCD/Grafana)
-- [ ] (опционально) cert-manager
+- [ ] Traefik Ingress Controller (wave 9)
+- [ ] cert-manager (wave 10)
+- [ ] Tailscale Operator (wave 11)
+- [ ] Tailscale Ingresses для admin UIs (wave 12)
+
+Дока: [docs/phase5/](docs/phase5/)
+
+| Компонент | Версия | Wave | Назначение |
+|-----------|--------|------|------------|
+| Traefik | 37.4.0 | 9 | Ingress Controller |
+| cert-manager | 1.19.1 | 10 | TLS certificates |
+| Tailscale Operator | 1.90.9 | 11 | Private networking |
+| Tailscale Ingresses | - | 12 | Admin UIs access |
+
+**Prerequisites:**
+1. Tailscale ACL: добавить `tag:k8s-operator` и `tag:k8s`
+2. Tailscale OAuth client (Devices Core, Auth Keys, Services Write)
+3. Doppler secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET`
+
+**Access после синхронизации:**
+- https://argocd (через Tailscale)
+- https://longhorn (через Tailscale)
+- https://traefik (через Tailscale)
 
 ## Фаза 6: Data
 - [ ] CloudNativePG operator
