@@ -71,9 +71,8 @@ services:
 | 9 | Tailscale Credentials |
 | 10 | Tailscale Operator |
 | 12 | NGINX Ingress Controller |
-| 14 | Auth0 Credentials |
-| 15 | oauth2-proxy |
-| 17 | Protected Services (Helm chart) |
+| 14 | Auth0 Credentials (namespace + secrets) |
+| 17 | Protected Services (oauth2-proxy + ingresses + LBs) |
 
 ## Files
 
@@ -81,25 +80,24 @@ services:
 apps/templates/network/
 ├── nginx-ingress.yaml           # Wave 12
 ├── auth0-credentials.yaml       # Wave 14
-├── oauth2-proxy.yaml            # Wave 15
 └── protected-services.yaml      # Wave 17
 
 charts/protected-services/
 ├── Chart.yaml
-├── values.yaml                  # <-- CHANGE TAILNET HERE
+├── values.yaml                  # <-- CHANGE TAILNET HERE (single source of truth)
 └── templates/
+    ├── oauth2-proxy.yaml        # Deployment + Service
     ├── tailscale-services.yaml  # Creates LB per service
     ├── ingresses.yaml           # Protected ingresses
     └── oauth2-proxy-ingress.yaml
 
 helm-values/network/
-├── nginx-ingress.yaml
-└── oauth2-proxy.yaml
+└── nginx-ingress.yaml
 
 manifests/network/
 └── auth0-credentials/
-    ├── namespace.yaml
-    └── external-secret.yaml
+    ├── namespace.yaml           # Creates oauth2-proxy namespace
+    └── external-secret.yaml     # oauth2-proxy-secrets, auth0-issuer
 ```
 
 ## Doppler Secrets (shared config)
@@ -119,7 +117,7 @@ See: [docs/phase5/03-auth0-setup.md](docs/phase5/03-auth0-setup.md)
 
 - [ ] Auth0 tenant created
 - [ ] Auth0 Application created (Regular Web App)
-- [ ] Callback URLs configured in Auth0 (without `internal.`!)
+- [ ] Callback URLs configured in Auth0
 - [ ] Doppler secrets added to `shared` config
 - [ ] `charts/protected-services/values.yaml` - tailnet updated
 - [ ] Git push → ArgoCD syncs
@@ -127,7 +125,7 @@ See: [docs/phase5/03-auth0-setup.md](docs/phase5/03-auth0-setup.md)
 ## Post-Deploy Verification
 
 - [ ] NGINX Ingress Controller running
-- [ ] oauth2-proxy running
+- [ ] oauth2-proxy running: `kubectl get pods -n oauth2-proxy`
 - [ ] Tailscale services created: `kubectl get svc -n ingress-nginx`
 - [ ] Access `https://longhorn.<tailnet>.ts.net` → Auth0 login
 - [ ] Access `https://argocd.<tailnet>.ts.net` → Auth0 login
