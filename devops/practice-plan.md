@@ -2,7 +2,7 @@
 
 > **Принцип:** Всё управляется через GitOps. Вручную устанавливается ТОЛЬКО ArgoCD.
 
-## Фаза 0: Подготовка
+## Фаза 0: Подготовка ✅
 - [x] VM (4 CPU, 8GB RAM, Ubuntu 22.04+)
 - [x] k3s без traefik и servicelb
 - [x] kubectl, helm, k9s
@@ -17,19 +17,18 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 
 Дока: [docs/phase0/](docs/phase0/)
 
-## Фаза 1: Core Infrastructure
+## Фаза 1: Core Infrastructure ✅
 - [x] ArgoCD (ручная установка)
 - [x] SSH ключ + Deploy key для example-infrastructure
-- [x] MetalLB (wave 1-2)
 - [x] Longhorn (wave 3)
 
 Дока: [docs/phase1/](docs/phase1/)
 
 | Компонент | Версия | Wave |
 |-----------|--------|------|
-| MetalLB | 0.15.2 | 1 |
-| MetalLB Config | - | 2 |
 | Longhorn | 1.10.1 | 3 |
+
+> **Удалено:** MetalLB - не нужен с Tailscale + Cloudflare Tunnel
 
 ## Фаза 2: GitOps Structure ✅
 - [x] Library Helm chart (`example-deploy/_library/`)
@@ -41,8 +40,6 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 - [x] Проверить что Application создался и синхронизировался
 
 Дока: [docs/phase2/](docs/phase2/)
-
-> **Примечание:** Pod в статусе `ImagePullBackOff` — это ожидаемо! Docker образ ещё не существует и credentials не настроены. Исправим в Фазе 3-4.
 
 ## Фаза 3: Secrets ✅
 - [x] Doppler аккаунт (бесплатный Developer план)
@@ -78,136 +75,175 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 | ArgoCD Image Updater | 7 | Автообновление образов |
 | ImageUpdater Config | 8 | CRD конфигурация |
 
-## Фаза 5: Networking ✅
-- [x] Tailscale Operator (wave 9-10) — kubectl через Tailscale
-- [x] Tailscale Ingress для ArgoCD (wave 11) — built-in OIDC
-- [x] Traefik Ingress Controller (wave 12) — public + internal via Tailscale LB
-- [x] cert-manager (wave 13) — TLS для public сервисов
-- [x] ClusterIssuers (wave 14) — Let's Encrypt prod + staging
+## Фаза 5: Private Networking + Auth (ПЕРЕРАБОТАНО)
+
+**Новая архитектура:**
+- Tailscale VPN для internal сервисов (NO public URLs)
+- NGINX Ingress Controller для routing + auth annotations
+- oauth2-proxy + Auth0 для централизованной аутентификации
+- Cloudflare Tunnel для public API (Фаза 6)
+
+### 5.1 Tailscale Operator
+- [ ] Tailscale OAuth client (Devices Core, Auth Keys, Services Write)
+- [ ] Tailscale ACL configuration (tagOwners, grants)
+- [ ] Doppler: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET`
+- [ ] Tailscale Operator deployment (wave 9-10)
+- [ ] Tailscale Service для NGINX Ingress (wave 11)
+
+### 5.2 NGINX Ingress Controller
+- [ ] NGINX Ingress Controller (ClusterIP, NOT LoadBalancer)
+- [ ] Tailscale Service → NGINX Ingress (internal-ingress.tailnet.ts.net)
+
+### 5.3 Auth0 Setup
+- [ ] Auth0 аккаунт + tenant
+- [ ] Auth0 Application (Regular Web App) для oauth2-proxy
+- [ ] Auth0 Application (Regular Web App) для ArgoCD
+- [ ] Auth0 Application (Regular Web App) для Grafana
+- [ ] Auth0 API (для public example-api JWT validation)
+- [ ] Auth0 Actions: Add groups to ID token
+- [ ] Doppler: `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`
+
+### 5.4 oauth2-proxy
+- [ ] Doppler: `OAUTH2_PROXY_COOKIE_SECRET`
+- [ ] Redis deployment (session storage)
+- [ ] oauth2-proxy Helm chart deployment
+- [ ] oauth2-proxy Ingress (auth.tailnet.ts.net)
+
+### 5.5 Protected Services
+- [ ] ArgoCD OIDC config (argocd-cm) → Auth0 direct
+- [ ] ArgoCD Ingress (NGINX + oauth2-proxy protection)
+- [ ] Longhorn Ingress (NGINX + oauth2-proxy protection)
+- [ ] Grafana OIDC config (grafana.ini) → Auth0 direct
+- [ ] Grafana Ingress (NGINX + oauth2-proxy protection)
 
 Дока: [docs/phase5/](docs/phase5/)
 
 | Компонент | Версия | Wave | Назначение |
 |-----------|--------|------|------------|
 | Tailscale Credentials | - | 9 | ExternalSecret для OAuth |
-| Tailscale Operator | 1.90.9 | 10 | API Server Proxy (kubectl) |
-| Tailscale Ingress (ArgoCD) | - | 11 | ArgoCD UI (has built-in OIDC) |
-| Traefik | 34.4.1 | 12 | Ingress Controller (public + internal) |
-| cert-manager | 1.17.2 | 13 | TLS для public сервисов |
-| ClusterIssuers | - | 14 | Let's Encrypt issuers |
+| Tailscale Operator | 1.90.9 | 10 | VPN + Service exposure |
+| Tailscale Service (NGINX) | - | 11 | Expose NGINX to tailnet |
+| NGINX Ingress Controller | 4.12.x | 12 | Internal routing + auth |
+| Auth0 Credentials | - | 13 | ExternalSecret для Auth0 |
+| Redis | 7.x | 14 | oauth2-proxy sessions |
+| oauth2-proxy | 7.x | 15 | Auth middleware |
+| ArgoCD OIDC Config | - | 16 | Auth0 integration |
+| Protected Ingresses | - | 17 | ArgoCD, Longhorn, Grafana |
 
-**Tailscale Prerequisites (выполнено):**
-1. ✅ ACL: `tagOwners`, `acls`, `grants`, `ssh` секции
-2. ✅ OAuth client (Devices Core, Auth Keys, Services Write)
-3. ✅ HTTPS Certificates и MagicDNS enabled
-4. ✅ Doppler: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET`
-
-**Важно:** ACL должен содержать `acls` секцию, иначе потеряется SSH доступ!
-
-**Public Access Prerequisites (TODO):**
-1. ⬜ Port forwarding на роутере: 80,443 → 192.168.8.240 (MetalLB IP)
-2. ✅ Public IP: 45.112.124.180
-3. ✅ Domain: nip.io (api.45.112.124.180.nip.io)
-
-**Access:**
-- `tailscale configure kubeconfig tailscale-operator` → kubectl
-- https://argocd.tail876052.ts.net (ArgoCD UI)
-- https://api-dev.45.112.124.180.nip.io (example-api dev) — after port forwarding
-- https://api.45.112.124.180.nip.io (example-api prd) — after port forwarding
-
-**Traefik архитектура:**
+**Архитектура:**
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         TAILNET (private)                       │
-│                                                                 │
-│   Traefik Service (loadBalancerClass: tailscale)               │
-│   traefik.tail876052.ts.net                                    │
-│   ├── TLS: Tailscale proxy (auto Let's Encrypt)                │
-│   ├── Middleware: ForwardAuth → oauth2-proxy → Auth0 (Phase 6) │
-│   └── Routes (Phase 6+):                                       │
-│       ├── longhorn → Longhorn UI                               │
-│       ├── prometheus → Prometheus                              │
-│       └── alertmanager → AlertManager                          │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                         INTERNET (public)                       │
-│                                                                 │
-│   Traefik Service (MetalLB: 192.168.8.240)                     │
-│   Port forwarding: 80,443 → 192.168.8.240                      │
-│   ├── TLS: cert-manager + Let's Encrypt                        │
-│   └── Routes:                                                  │
-│       ├── api-dev.45.112.124.180.nip.io → example-api-dev      │
-│       └── api.45.112.124.180.nip.io → example-api-prd          │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**TLS стратегия:**
-| Network | TLS Provider | Как |
-|---------|--------------|-----|
-| Tailscale (internal) | Tailscale proxy | Автоматически от Tailscale |
-| Public (internet) | cert-manager | Let's Encrypt ACME via HTTP-01 |
-
-Docs:
-- https://doc.traefik.io/traefik/
-- https://tailscale.com/kb/1439/kubernetes-operator-cluster-ingress
-- https://cert-manager.io/docs/
-
-## Фаза 6: Centralized Auth (Auth0)
-- [ ] Auth0 аккаунт + tenant
-- [ ] Auth0 Application (Regular Web App) для oauth2-proxy
-- [ ] Auth0 Application для ArgoCD (built-in OIDC)
-- [ ] Auth0 API для example-api (JWT validation)
-- [ ] oauth2-proxy deployment (Helm chart)
-- [ ] Traefik ForwardAuth middleware → oauth2-proxy
-- [ ] ArgoCD OIDC config
-- [ ] Grafana generic_oauth config
-- [ ] example-api: JWT validation в Spring Security
-- [ ] RBAC через Auth0 roles/permissions
-
-Дока: [docs/phase6/](docs/phase6/)
-
-| Компонент | Встроенный OIDC? | Auth метод | Network |
-|-----------|------------------|------------|---------|
-| ArgoCD | ✅ | Built-in OIDC → Auth0 | Tailscale Ingress |
-| Grafana | ✅ | `[auth.generic_oauth]` → Auth0 | Traefik (Tailscale LB) |
-| Longhorn | ❌ | Traefik ForwardAuth → oauth2-proxy → Auth0 | Traefik (Tailscale LB) |
-| Prometheus | ❌ | Traefik ForwardAuth → oauth2-proxy → Auth0 | Traefik (Tailscale LB) |
-| AlertManager | ❌ | Traefik ForwardAuth → oauth2-proxy → Auth0 | Traefik (Tailscale LB) |
-| example-api (web) | - | Traefik ForwardAuth → oauth2-proxy → Auth0 | Traefik (Public LB) |
-| example-api (API) | - | JWT verification (Spring Security) | Traefik (Public LB) |
-
-**Архитектура oauth2-proxy:**
-```
-User Request → Traefik
-                 │
-                 ▼ ForwardAuth
-         ┌───────────────┐
-         │ oauth2-proxy  │◄──► Auth0
-         │ /oauth2/auth  │
-         └───────┬───────┘
-                 │
-         202 OK ─┴─ 401 → redirect to Auth0 login
-                 │
-                 ▼
-         Backend Service
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           TAILSCALE VPN                                      │
+│                                                                              │
+│   Your Device (Tailscale Client)                                            │
+│         │                                                                    │
+│         ▼                                                                    │
+│   ┌─────────────────────────────────────────────────────────────────┐       │
+│   │  Tailscale Service (LoadBalancer class: tailscale)              │       │
+│   │  internal.tailnet-xxxx.ts.net                                   │       │
+│   │                         │                                        │       │
+│   │                         ▼                                        │       │
+│   │  ┌───────────────────────────────────────────────────────┐      │       │
+│   │  │  NGINX Ingress Controller (ClusterIP)                 │      │       │
+│   │  │                                                        │      │       │
+│   │  │  Ingress annotations:                                  │      │       │
+│   │  │    auth-url: http://oauth2-proxy/oauth2/auth          │      │       │
+│   │  │    auth-signin: https://auth.tailnet.ts.net/start     │      │       │
+│   │  │                         │                              │      │       │
+│   │  │                         ▼                              │      │       │
+│   │  │  ┌─────────────────────────────────────────────┐      │      │       │
+│   │  │  │  oauth2-proxy                                │      │      │       │
+│   │  │  │  - provider: oidc (Auth0)                   │      │      │       │
+│   │  │  │  - upstream: static://202                   │      │      │       │
+│   │  │  │  - redis session store                      │      │      │       │
+│   │  │  └─────────────────────────────────────────────┘      │      │       │
+│   │  │                         │                              │      │       │
+│   │  │              (authenticated)                           │      │       │
+│   │  │                         ▼                              │      │       │
+│   │  │  ┌─────────────────────────────────────────────┐      │      │       │
+│   │  │  │  Backend Services                            │      │      │       │
+│   │  │  │  - argocd.internal.ts.net → ArgoCD          │      │      │       │
+│   │  │  │  - longhorn.internal.ts.net → Longhorn      │      │      │       │
+│   │  │  │  - grafana.internal.ts.net → Grafana        │      │      │       │
+│   │  │  └─────────────────────────────────────────────┘      │      │       │
+│   │  └───────────────────────────────────────────────────────┘      │       │
+│   └─────────────────────────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Безопасность (3 уровня):**
-1. **Network:** Tailscale (только tailnet devices могут подключиться)
-2. **Transport:** TLS/HTTPS (сертификаты от Tailscale или cert-manager)
-3. **Application:** Auth0 OIDC через oauth2-proxy
+1. **Network:** Tailscale VPN (только tailnet devices могут подключиться)
+2. **Transport:** TLS/HTTPS (сертификаты от Tailscale)
+3. **Application:** Auth0 OIDC через oauth2-proxy + NGINX
 
 **Prerequisites:**
-1. Auth0 Free account (до 25K MAU)
-2. Doppler secrets: `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `OAUTH2_PROXY_COOKIE_SECRET`
+1. Tailscale account + OAuth client
+2. Auth0 Free account (7,000 MAU)
+3. Doppler secrets configured
 
-Docs:
-- https://oauth2-proxy.github.io/oauth2-proxy/
-- https://medium.com/@bdalpe/protecting-kubernetes-ingress-resources-with-traefik-forwardauth-and-oauth2-proxy-a7b3d330f276
-- https://github.com/argoproj/argo-cd/blob/master/docs/operator-manual/user-management/auth0.md
-- https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/generic-oauth/
-- https://auth0.com/docs/quickstart/backend/java-spring-security5
+**Удалено из старого плана:**
+- ❌ MetalLB (не нужен)
+- ❌ Traefik (заменён на NGINX)
+- ❌ cert-manager (TLS от Tailscale для internal, от Cloudflare для public)
+- ❌ ClusterIssuers (не нужны)
+
+## Фаза 6: Public Access (Cloudflare Tunnel)
+
+**После настройки private access добавляем public:**
+- [ ] Cloudflare account + domain (~$10/year)
+- [ ] Cloudflare Tunnel в Zero Trust Dashboard
+- [ ] Doppler: `CF_TUNNEL_TOKEN`
+- [ ] cloudflared deployment
+- [ ] Public routes: api.example.com, app.example.com
+
+Дока: [docs/phase6/](docs/phase6/)
+
+| Компонент | Wave | Назначение |
+|-----------|------|------------|
+| Cloudflare Credentials | 20 | ExternalSecret для Tunnel |
+| Cloudflare Tunnel | 21 | Public access без port forward |
+
+**Архитектура:**
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              INTERNET                                        │
+│                                  │                                           │
+│                    ┌─────────────▼─────────────┐                            │
+│                    │     Cloudflare Edge       │                            │
+│                    │  • DDoS Protection        │                            │
+│                    │  • WAF                    │                            │
+│                    │  • TLS Termination        │                            │
+│                    └─────────────┬─────────────┘                            │
+│                                  │                                           │
+│                    ┌─────────────▼─────────────┐                            │
+│                    │   Cloudflare Tunnel       │                            │
+│                    │   (outbound only)         │                            │
+│                    └─────────────┬─────────────┘                            │
+│                                  │                                           │
+│   ┌──────────────────────────────▼──────────────────────────────────────┐   │
+│   │                         KUBERNETES                                   │   │
+│   │                                                                      │   │
+│   │   cloudflared pod                                                   │   │
+│   │       │                                                              │   │
+│   │       ├── api.example.com → example-api.prd:8080                    │   │
+│   │       ├── api-dev.example.com → example-api.dev:8080                │   │
+│   │       └── app.example.com → example-ui.prd:80                       │   │
+│   │                                                                      │   │
+│   │   Auth: JWT validation in Spring Boot (Auth0 tokens)                │   │
+│   └──────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**example-api JWT validation:**
+```kotlin
+// Spring Security Resource Server
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://YOUR_TENANT.auth0.com/
+```
 
 ## Фаза 7: Data
 - [ ] CloudNativePG operator
@@ -216,26 +252,74 @@ Docs:
 - [ ] Подключить приложение к БД
 
 ## Фаза 8: Observability
-- [ ] kube-prometheus-stack
+- [ ] kube-prometheus-stack (Prometheus + Grafana)
 - [ ] Loki + Promtail
 - [ ] ServiceMonitor для приложения
+- [ ] Grafana OIDC → Auth0
+- [ ] Grafana Ingress (NGINX + oauth2-proxy)
 
 ## Фаза 9: Backup
 - [ ] MinIO
 - [ ] Velero
 - [ ] Тест: backup → delete → restore
 
-## Фаза 10: Full Test (dev)
+## Фаза 10: Full Test
 - [ ] Все pods Running
-- [ ] Приложение отвечает
-- [ ] Секреты синхронизируются
+- [ ] Private: ArgoCD, Longhorn, Grafana через VPN
+- [ ] Public: example-api через Cloudflare
+- [ ] Auth: Auth0 SSO работает везде
 - [ ] CI/CD: push → autodeploy работает
 - [ ] Метрики/логи работают
 - [ ] Backup/restore работает
 
-## Фаза 11: Production Environment
-- [ ] Doppler config `prd` + Service Token
-- [ ] K8s Secret `doppler-token-prd`
-- [ ] ClusterSecretStore `doppler-prd`
-- [ ] ApplicationSet для prd namespace
-- [ ] Тест: деплой в prd
+---
+
+## Компоненты: Финальный Список
+
+### Используем ✅
+| Компонент | Назначение |
+|-----------|------------|
+| ArgoCD | GitOps |
+| Longhorn | Storage |
+| External Secrets + Doppler | Secrets management |
+| ArgoCD Image Updater | Auto-update images |
+| Tailscale Operator | VPN + Internal access |
+| NGINX Ingress Controller | Internal routing + auth |
+| oauth2-proxy | Auth middleware |
+| Auth0 | Centralized OIDC |
+| Redis | oauth2-proxy sessions |
+| Cloudflare Tunnel | Public access |
+
+### Удалено ❌
+| Компонент | Причина |
+|-----------|---------|
+| MetalLB | Не нужен с Tailscale + Cloudflare |
+| Traefik | Заменён на NGINX (лучше auth support) |
+| cert-manager | TLS от Tailscale (internal) / Cloudflare (public) |
+| ClusterIssuers | Не нужны без cert-manager |
+
+---
+
+## Sync Waves (Обновлённые)
+
+| Wave | Component |
+|------|-----------|
+| 1-2 | (removed MetalLB) |
+| 3 | Longhorn |
+| 4 | External Secrets Operator |
+| 5 | ClusterSecretStores |
+| 6 | Docker Credentials |
+| 7 | ArgoCD Image Updater |
+| 8 | Image Updater Config |
+| 9 | Tailscale Credentials |
+| 10 | Tailscale Operator |
+| 11 | Tailscale Service (NGINX) |
+| 12 | NGINX Ingress Controller |
+| 13 | Auth0 Credentials |
+| 14 | Redis |
+| 15 | oauth2-proxy |
+| 16 | ArgoCD OIDC Config |
+| 17 | Protected Ingresses |
+| 20 | Cloudflare Credentials |
+| 21 | Cloudflare Tunnel |
+| 25 | Application Services |
