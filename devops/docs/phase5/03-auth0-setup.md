@@ -126,14 +126,15 @@ After Tailscale Operator deploys, check the service:
 kubectl get svc -n ingress-nginx nginx-tailscale
 ```
 
-The external IP will show: `internal.tailnet-abc123.ts.net`
+The external IP will show your tailnet hostname (e.g., `tail876052.ts.net`)
 
 Or check Tailscale Admin Console → Machines
 
 ## 8. Update Ingress Hosts
 
 Edit files in `manifests/network/ingresses/`:
-- Replace `tailnet-xxxx` with your actual tailnet name
+- Replace `tail876052` with your actual tailnet name
+- Format: `<service>.<tailnet>.ts.net` (e.g., `longhorn.tail876052.ts.net`)
 
 ## Optional: User Management
 
