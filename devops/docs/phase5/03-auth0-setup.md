@@ -1,10 +1,47 @@
 # Auth0 Setup for oauth2-proxy
 
+## Dev vs Prd: Which to Use?
+
+### Infrastructure Services (shared)
+
+ArgoCD, Longhorn, Grafana - это **инфраструктурные** сервисы. Они управляют и dev, и prd окружениями, поэтому используют **shared** config:
+
+| Service | Doppler Config | Reason |
+|---------|---------------|--------|
+| oauth2-proxy | `shared` | Защищает инфра-сервисы |
+| ArgoCD | `shared` | Деплоит в dev и prd |
+| Longhorn | `shared` | Storage для всех окружений |
+
+### Application Auth (per environment)
+
+Если API нужна Auth0 авторизация:
+
+| Service | Doppler Config | Reason |
+|---------|---------------|--------|
+| example-api | `dev` / `prd` | Разные клиенты/аудитории |
+
+### Doppler Structure
+
+```
+example (project)
+├── shared           ← Infrastructure Auth0
+│   ├── AUTH0_DOMAIN
+│   ├── AUTH0_CLIENT_ID_OAUTH2_PROXY
+│   ├── AUTH0_CLIENT_SECRET_OAUTH2_PROXY
+│   └── OAUTH2_PROXY_COOKIE_SECRET
+├── dev              ← App-specific (future)
+│   └── AUTH0_CLIENT_ID_API (if needed)
+└── prd              ← App-specific (future)
+    └── AUTH0_CLIENT_ID_API (if needed)
+```
+
 ## 1. Create Auth0 Tenant
 
 1. Go to [auth0.com](https://auth0.com) → Sign Up
-2. Create tenant (e.g., `example-dev`)
-3. Note your domain: `example-dev.auth0.com`
+2. Create tenant (e.g., `example-infra` or `example-dev`)
+3. Note your domain: `example-infra.auth0.com`
+
+> **Naming:** Use `-infra` suffix to distinguish from app-level tenants, or just use one tenant for everything.
 
 ## 2. Create Application
 
@@ -53,7 +90,7 @@ But Auth0 warns: "Avoid using wildcard placeholders in production as it can make
 ## 4. Get Credentials
 
 From Application Settings page:
-- **Domain** → `AUTH0_DOMAIN` (e.g., `example-dev.auth0.com`)
+- **Domain** → `AUTH0_DOMAIN` (e.g., `example-infra.auth0.com`)
 - **Client ID** → `AUTH0_CLIENT_ID_OAUTH2_PROXY`
 - **Client Secret** → `AUTH0_CLIENT_SECRET_OAUTH2_PROXY`
 
@@ -67,14 +104,19 @@ This becomes `OAUTH2_PROXY_COOKIE_SECRET`
 
 ## 6. Add to Doppler
 
-Project: `example` → Config: `shared`
+Project: `example` → Config: **`shared`**
 
 | Key | Value |
 |-----|-------|
-| `AUTH0_DOMAIN` | `example-dev.auth0.com` |
+| `AUTH0_DOMAIN` | `example-infra.auth0.com` |
 | `AUTH0_CLIENT_ID_OAUTH2_PROXY` | (from Auth0) |
 | `AUTH0_CLIENT_SECRET_OAUTH2_PROXY` | (from Auth0) |
 | `OAUTH2_PROXY_COOKIE_SECRET` | (generated) |
+
+**Why shared?**
+- oauth2-proxy protects infrastructure services
+- These services manage both dev and prd environments
+- One Auth0 app for all infra access
 
 ## 7. Find Your Tailnet Name
 
