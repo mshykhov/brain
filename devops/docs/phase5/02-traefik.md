@@ -4,45 +4,41 @@ Docs: https://doc.traefik.io/traefik/
 
 ## Overview
 
-Traefik v3 для:
-- Internal сервисов через Tailscale LoadBalancer (ForwardAuth → oauth2-proxy → Auth0)
-- Public сервисов через MetalLB (cert-manager для TLS)
+Traefik v3 с dual-service архитектурой:
+- **Primary Service (MetalLB):** Публичный доступ через интернет
+- **Additional Service (Tailscale):** Внутренний доступ через tailnet
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
+│                         INTERNET (public)                       │
+│                                                                 │
+│   Traefik Primary Service (MetalLB)                            │
+│   IP: 192.168.8.240                                            │
+│   ├── HTTP :80 → redirect to HTTPS                             │
+│   ├── HTTPS :443 → TLS via cert-manager + Let's Encrypt        │
+│   └── Routes:                                                  │
+│       ├── api-dev.45.112.124.180.nip.io → example-api (dev)    │
+│       └── api.45.112.124.180.nip.io → example-api (prd)        │
+│                                                                 │
+│   Prerequisites:                                               │
+│   - Router port forwarding: 80,443 → 192.168.8.240             │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
 │                         TAILNET (private)                       │
 │                                                                 │
-│   Traefik Service (loadBalancerClass: tailscale)               │
-│   traefik.tail876052.ts.net                                    │
+│   Traefik Additional Service (Tailscale)                       │
+│   traefik.ts.net                                               │
 │   ├── TLS: Tailscale proxy (auto Let's Encrypt)                │
 │   ├── Middleware: ForwardAuth → oauth2-proxy → Auth0 (Phase 6) │
-│   └── IngressRoutes:                                           │
+│   └── Routes:                                                  │
 │       ├── longhorn-internal → Longhorn UI                      │
 │       ├── prometheus-internal → Prometheus                     │
 │       └── alertmanager-internal → AlertManager                 │
 └─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                         INTERNET (public)                       │
-│                                                                 │
-│   Traefik Service (MetalLB) - Optional second service          │
-│   ├── TLS: cert-manager + Let's Encrypt                        │
-│   └── IngressRoutes:                                           │
-│       └── api.example.com → example-api                        │
-└─────────────────────────────────────────────────────────────────┘
 ```
-
-## How TLS Works
-
-**Tailscale LoadBalancer:**
-1. Tailscale Operator создаёт proxy pod
-2. Proxy pod присоединяется к tailnet как `traefik.ts.net`
-3. TLS терминируется на proxy (Let's Encrypt через Tailscale)
-4. Traefik получает HTTP трафик от proxy
-
-**Преимущество:** Не требует tailscale на хосте, полностью управляется Kubernetes Operator.
 
 ## Configuration
 
@@ -51,29 +47,57 @@ Values file: `helm-values/network/traefik.yaml`
 ```yaml
 ingressClass:
   enabled: true
-  isDefaultClass: false
+  isDefaultClass: true
 
 providers:
   kubernetesCRD:
     enabled: true
     allowCrossNamespace: true
+    allowExternalNameServices: true
   kubernetesIngress:
-    enabled: false
+    enabled: true
+    publishedService:
+      enabled: true
 
+# Entrypoints
 ports:
   web:
+    port: 8000
+    expose:
+      default: true
+      internal: true
     exposedPort: 80
+    protocol: TCP
+    # Traefik v34+ syntax for HTTP→HTTPS redirect
+    redirections:
+      entryPoint:
+        to: websecure
+        scheme: https
+        permanent: true
   websecure:
+    port: 8443
+    expose:
+      default: true
+      internal: true
     exposedPort: 443
+    protocol: TCP
     tls:
-      enabled: false  # TLS on Tailscale proxy
+      enabled: true
 
+# Primary Service: MetalLB (public access)
 service:
+  enabled: true
   type: LoadBalancer
-  annotations:
-    tailscale.com/hostname: "traefik"
-  spec:
-    loadBalancerClass: tailscale
+  # Additional Service: Tailscale (internal access)
+  additionalServices:
+    internal:
+      type: LoadBalancer
+      annotations:
+        tailscale.com/hostname: "traefik"
+      labels:
+        traefik-service-label: internal
+      spec:
+        loadBalancerClass: tailscale
 ```
 
 ## Files
@@ -89,35 +113,56 @@ service:
 # Check Traefik pod
 kubectl get pods -n traefik
 
-# Check service got Tailscale IP
-kubectl get svc -n traefik traefik
+# Check services
+kubectl get svc -n traefik
+# Should see:
+# - traefik (192.168.8.240 from MetalLB)
+# - traefik-internal (Tailscale IP)
 
 # Check in Tailscale admin
 # https://login.tailscale.com/admin/machines
-# Should see: traefik.tail876052.ts.net
+# Should see: traefik.ts.net
 ```
 
-## IngressRoute Example
+## IngressRoute with cert-manager
 
 ```yaml
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
-  name: longhorn-internal
-  namespace: traefik
+  name: example-api
+  namespace: dev
 spec:
   entryPoints:
-    - web
+    - websecure
   routes:
-    - match: Host(`longhorn.tail876052.ts.net`)
+    - match: Host(`api-dev.45.112.124.180.nip.io`)
       kind: Rule
       services:
-        - name: longhorn-frontend
-          namespace: longhorn-system
-          port: 80
+        - name: example-api
+          port: 8080
+  tls:
+    secretName: example-api-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: example-api-tls
+  namespace: dev
+spec:
+  secretName: example-api-tls
+  issuerRef:
+    name: letsencrypt-staging  # or letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - api-dev.45.112.124.180.nip.io
 ```
 
-## Next Steps
+## nip.io Domain
 
-- Phase 6: oauth2-proxy + Middleware для ForwardAuth
-- Public service (optional): MetalLB + cert-manager
+Для публичного доступа без покупки домена используется nip.io:
+- Формат: `<subdomain>.<public-ip>.nip.io`
+- Dev: `api-dev.45.112.124.180.nip.io`
+- Prd: `api.45.112.124.180.nip.io`
+
+nip.io автоматически резолвит в указанный IP.

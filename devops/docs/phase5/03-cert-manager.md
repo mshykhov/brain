@@ -14,10 +14,11 @@ Docs: https://cert-manager.io/
 ┌─────────────────────────────────────────────────────────────────┐
 │                         INTERNET (public)                       │
 │                                                                 │
-│   Traefik Service (MetalLB)                                    │
+│   Traefik Service (MetalLB: 192.168.8.240)                     │
 │   ├── TLS: cert-manager + Let's Encrypt                        │
 │   └── Routes:                                                  │
-│       └── api.example.com → example-api                        │
+│       ├── api-dev.45.112.124.180.nip.io → example-api (dev)    │
+│       └── api.45.112.124.180.nip.io → example-api (prd)        │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
@@ -52,10 +53,41 @@ prometheus:
 |------|---------|
 | `helm-values/network/cert-manager.yaml` | Helm values |
 | `apps/templates/network/cert-manager.yaml` | ArgoCD Application (wave 13) |
+| `manifests/network/cert-manager-issuer/*.yaml` | ClusterIssuers (wave 14) |
 
-## ClusterIssuer (создаётся отдельно)
+## ClusterIssuers
 
-После установки cert-manager, создать ClusterIssuer:
+Два ClusterIssuer для разных окружений:
+
+### letsencrypt-staging (для dev)
+
+File: `manifests/network/cert-manager-issuer/letsencrypt-staging.yaml`
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: myronshykhov95@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+```
+
+**Staging сервер:**
+- Не имеет rate limits
+- Сертификаты НЕ доверенные (для тестирования)
+- Используется для dev окружения
+
+### letsencrypt-prod (для prd)
+
+File: `manifests/network/cert-manager-issuer/letsencrypt-prod.yaml`
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -65,37 +97,52 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: your-email@example.com
+    email: myronshykhov95@gmail.com
     privateKeySecretRef:
-      name: letsencrypt-prod
+      name: letsencrypt-prod-account-key
     solvers:
       - http01:
           ingress:
             ingressClassName: traefik
 ```
 
-## Usage with Traefik IngressRoute
+**Production сервер:**
+- Имеет rate limits (50 certificates/week)
+- Сертификаты доверенные
+- Используется для prd окружения
+
+## Usage in example-deploy
+
+Helm values для IngressRoute + Certificate:
+
+### values-dev.yaml
 
 ```yaml
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
-  name: example-api
-  namespace: traefik
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-spec:
+ingressRoute:
+  enabled: true
+  host: "api-dev.45.112.124.180.nip.io"
   entryPoints:
     - websecure
-  routes:
-    - match: Host(`api.example.com`)
-      kind: Rule
-      services:
-        - name: example-api
-          namespace: dev
-          port: 8080
   tls:
-    secretName: example-api-tls
+    enabled: true
+    certManager:
+      enabled: true
+      issuer: letsencrypt-staging
+```
+
+### values-prd.yaml
+
+```yaml
+ingressRoute:
+  enabled: true
+  host: "api.45.112.124.180.nip.io"
+  entryPoints:
+    - websecure
+  tls:
+    enabled: true
+    certManager:
+      enabled: true
+      issuer: letsencrypt-prod
 ```
 
 ## Verification
@@ -106,14 +153,45 @@ kubectl get pods -n cert-manager
 
 # Check ClusterIssuer status
 kubectl get clusterissuer
+# Both should show Ready: True
 
 # Check certificates
 kubectl get certificates --all-namespaces
+
+# Check certificate details
+kubectl describe certificate example-api-tls -n dev
+
+# Check ACME challenges (during issuance)
+kubectl get challenges --all-namespaces
 ```
+
+## Troubleshooting
+
+### Certificate not issuing
+
+1. Check ClusterIssuer status:
+   ```bash
+   kubectl describe clusterissuer letsencrypt-staging
+   ```
+
+2. Check Certificate status:
+   ```bash
+   kubectl describe certificate example-api-tls -n dev
+   ```
+
+3. Check ACME challenge:
+   ```bash
+   kubectl get challenges -A
+   kubectl describe challenge <name> -n <namespace>
+   ```
+
+4. Ensure port forwarding is configured:
+   - Router: 80,443 → 192.168.8.240
 
 ## When to Use
 
-| Service Type | TLS Provider |
-|-------------|--------------|
-| Public (internet) | cert-manager + Let's Encrypt |
-| Internal (tailnet) | Tailscale proxy (automatic) |
+| Environment | ClusterIssuer | Certificate Trust |
+|-------------|---------------|-------------------|
+| dev | letsencrypt-staging | Not trusted (testing) |
+| prd | letsencrypt-prod | Trusted |
+| internal (tailnet) | Not needed | Tailscale auto-TLS |
