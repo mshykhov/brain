@@ -4,71 +4,120 @@ Docs: https://doc.traefik.io/traefik/
 
 ## Overview
 
-Traefik v3 as main Ingress Controller for public-facing services.
+Traefik v3 для:
+- Internal сервисов через Tailscale LoadBalancer (ForwardAuth → oauth2-proxy → Auth0)
+- Public сервисов через MetalLB (cert-manager для TLS)
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         TAILNET (private)                       │
+│                                                                 │
+│   Traefik Service (loadBalancerClass: tailscale)               │
+│   traefik.tail876052.ts.net                                    │
+│   ├── TLS: Tailscale proxy (auto Let's Encrypt)                │
+│   ├── Middleware: ForwardAuth → oauth2-proxy → Auth0 (Phase 6) │
+│   └── IngressRoutes:                                           │
+│       ├── longhorn-internal → Longhorn UI                      │
+│       ├── prometheus-internal → Prometheus                     │
+│       └── alertmanager-internal → AlertManager                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                         INTERNET (public)                       │
+│                                                                 │
+│   Traefik Service (MetalLB) - Optional second service          │
+│   ├── TLS: cert-manager + Let's Encrypt                        │
+│   └── IngressRoutes:                                           │
+│       └── api.example.com → example-api                        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## How TLS Works
+
+**Tailscale LoadBalancer:**
+1. Tailscale Operator создаёт proxy pod
+2. Proxy pod присоединяется к tailnet как `traefik.ts.net`
+3. TLS терминируется на proxy (Let's Encrypt через Tailscale)
+4. Traefik получает HTTP трафик от proxy
+
+**Преимущество:** Не требует tailscale на хосте, полностью управляется Kubernetes Operator.
 
 ## Configuration
 
 Values file: `helm-values/network/traefik.yaml`
 
 ```yaml
-service:
-  type: LoadBalancer
+ingressClass:
+  enabled: true
+  isDefaultClass: false
+
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true
+  kubernetesIngress:
+    enabled: false
 
 ports:
   web:
-    expose:
-      default: true
     exposedPort: 80
   websecure:
-    expose:
-      default: true
     exposedPort: 443
+    tls:
+      enabled: false  # TLS on Tailscale proxy
 
-ingressRoute:
-  dashboard:
-    enabled: false
-
-logs:
-  general:
-    level: INFO
+service:
+  type: LoadBalancer
+  annotations:
+    tailscale.com/hostname: "traefik"
+  spec:
+    loadBalancerClass: tailscale
 ```
 
-Key settings:
-- LoadBalancer via MetalLB
-- HTTP → HTTPS redirect
-- Prometheus metrics enabled (Phase 8)
-- Dashboard disabled (access via Tailscale)
+## Files
 
-## Ports
-
-| Port | Purpose |
+| File | Purpose |
 |------|---------|
-| 80 | HTTP (redirects to 443) |
-| 443 | HTTPS |
-| 9100 | Metrics (internal) |
+| `helm-values/network/traefik.yaml` | Helm values |
+| `apps/templates/network/traefik.yaml` | ArgoCD Application (wave 12) |
 
-## Usage
+## Verification
 
-Standard Kubernetes Ingress:
+```bash
+# Check Traefik pod
+kubectl get pods -n traefik
+
+# Check service got Tailscale IP
+kubectl get svc -n traefik traefik
+
+# Check in Tailscale admin
+# https://login.tailscale.com/admin/machines
+# Should see: traefik.tail876052.ts.net
+```
+
+## IngressRoute Example
 
 ```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
 metadata:
-  name: my-app
+  name: longhorn-internal
+  namespace: traefik
 spec:
-  ingressClassName: traefik
-  rules:
-    - host: app.example.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: my-app
-                port:
-                  number: 8080
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`longhorn.tail876052.ts.net`)
+      kind: Rule
+      services:
+        - name: longhorn-frontend
+          namespace: longhorn-system
+          port: 80
 ```
 
-Or Traefik IngressRoute CRD for advanced routing.
+## Next Steps
+
+- Phase 6: oauth2-proxy + Middleware для ForwardAuth
+- Public service (optional): MetalLB + cert-manager
