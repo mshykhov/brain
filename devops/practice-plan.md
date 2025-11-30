@@ -81,8 +81,9 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 ## Фаза 5: Networking ✅
 - [x] Tailscale Operator (wave 9-10) — kubectl через Tailscale
 - [x] Tailscale Ingress для ArgoCD (wave 11) — built-in OIDC
-- [ ] Traefik Ingress Controller (wave 12) — public + internal via Tailscale LB
-- [ ] cert-manager (wave 13) — только для public сервисов
+- [x] Traefik Ingress Controller (wave 12) — public + internal via Tailscale LB
+- [x] cert-manager (wave 13) — TLS для public сервисов
+- [x] ClusterIssuers (wave 14) — Let's Encrypt prod + staging
 
 Дока: [docs/phase5/](docs/phase5/)
 
@@ -91,8 +92,9 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 | Tailscale Credentials | - | 9 | ExternalSecret для OAuth |
 | Tailscale Operator | 1.90.9 | 10 | API Server Proxy (kubectl) |
 | Tailscale Ingress (ArgoCD) | - | 11 | ArgoCD UI (has built-in OIDC) |
-| Traefik | TBD | 12 | Ingress Controller (public + internal) |
-| cert-manager | TBD | 13 | TLS для public сервисов |
+| Traefik | 34.4.1 | 12 | Ingress Controller (public + internal) |
+| cert-manager | 1.17.2 | 13 | TLS для public сервисов |
+| ClusterIssuers | - | 14 | Let's Encrypt issuers |
 
 **Tailscale Prerequisites (выполнено):**
 1. ✅ ACL: `tagOwners`, `acls`, `grants`, `ssh` секции
@@ -102,9 +104,16 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 
 **Важно:** ACL должен содержать `acls` секцию, иначе потеряется SSH доступ!
 
-**Access (работает):**
+**Public Access Prerequisites (TODO):**
+1. ⬜ Port forwarding на роутере: 80,443 → 192.168.8.240 (MetalLB IP)
+2. ✅ Public IP: 45.112.124.180
+3. ✅ Domain: nip.io (api.45.112.124.180.nip.io)
+
+**Access:**
 - `tailscale configure kubeconfig tailscale-operator` → kubectl
 - https://argocd.tail876052.ts.net (ArgoCD UI)
+- https://api-dev.45.112.124.180.nip.io (example-api dev) — after port forwarding
+- https://api.45.112.124.180.nip.io (example-api prd) — after port forwarding
 
 **Traefik архитектура:**
 ```
@@ -113,35 +122,36 @@ curl -sL https://raw.githubusercontent.com/mshykhov/brain/main/devops/scripts/ph
 │                                                                 │
 │   Traefik Service (loadBalancerClass: tailscale)               │
 │   traefik.tail876052.ts.net                                    │
-│   ├── TLS: certificateResolver: tailscale (auto Let's Encrypt) │
-│   ├── Middleware: ForwardAuth → oauth2-proxy → Auth0           │
-│   └── Routes:                                                  │
-│       ├── longhorn.ts.net → Longhorn UI                        │
-│       ├── prometheus.ts.net → Prometheus                       │
-│       └── alertmanager.ts.net → AlertManager                   │
+│   ├── TLS: Tailscale proxy (auto Let's Encrypt)                │
+│   ├── Middleware: ForwardAuth → oauth2-proxy → Auth0 (Phase 6) │
+│   └── Routes (Phase 6+):                                       │
+│       ├── longhorn → Longhorn UI                               │
+│       ├── prometheus → Prometheus                              │
+│       └── alertmanager → AlertManager                          │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
 │                         INTERNET (public)                       │
 │                                                                 │
-│   Traefik Service (type: LoadBalancer via MetalLB)             │
+│   Traefik Service (MetalLB: 192.168.8.240)                     │
+│   Port forwarding: 80,443 → 192.168.8.240                      │
 │   ├── TLS: cert-manager + Let's Encrypt                        │
-│   ├── Middleware: ForwardAuth → oauth2-proxy → Auth0 (web UI)  │
-│   ├── JWT validation (API endpoints)                           │
 │   └── Routes:                                                  │
-│       └── api.example.com → example-api                        │
+│       ├── api-dev.45.112.124.180.nip.io → example-api-dev      │
+│       └── api.45.112.124.180.nip.io → example-api-prd          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **TLS стратегия:**
 | Network | TLS Provider | Как |
 |---------|--------------|-----|
-| Tailscale (internal) | Traefik + Tailscale cert resolver | Автоматически от Tailscale |
-| Public (internet) | Traefik + cert-manager | Let's Encrypt ACME |
+| Tailscale (internal) | Tailscale proxy | Автоматически от Tailscale |
+| Public (internet) | cert-manager | Let's Encrypt ACME via HTTP-01 |
 
 Docs:
-- https://doc.traefik.io/traefik/reference/install-configuration/tls/certificate-resolvers/tailscale/
+- https://doc.traefik.io/traefik/
 - https://tailscale.com/kb/1439/kubernetes-operator-cluster-ingress
+- https://cert-manager.io/docs/
 
 ## Фаза 6: Centralized Auth (Auth0)
 - [ ] Auth0 аккаунт + tenant
