@@ -18,36 +18,51 @@ Tailscale LB (per service) → NGINX Ingress → oauth2-proxy → Backend
 
 ## Manual Changes Required
 
-**IMPORTANT:** These files contain example values that must be changed:
+**IMPORTANT:** Only one file to change:
 
-### 1. Tailnet Hostname
+### 1. Tailnet Name
 
 Find your tailnet name:
 - Tailscale Admin Console → Settings → General → Tailnet name
-- Or: `kubectl get svc -n tailscale`
+- Or: `kubectl get svc -n ingress-nginx`
 
-Update in these files (replace `tail876052` with your tailnet):
-
-| File | What to change |
-|------|----------------|
-| `manifests/network/ingresses/longhorn-ingress.yaml` | `host: longhorn.<tailnet>.ts.net` |
-| `manifests/network/ingresses/oauth2-proxy-ingress.yaml` | All hosts |
-| `manifests/network/ingresses/argocd-ingress.yaml.disabled` | `host: argocd.<tailnet>.ts.net` |
+Update in: `charts/protected-services/values.yaml`
+```yaml
+tailnet: tail876052  # Change this
+```
 
 ### 2. Auth0 Callback URLs
 
-Add to Auth0 Application → Allowed Callback URLs:
+Add to Auth0 Application → Settings:
+
+**Allowed Callback URLs:**
 ```
 https://longhorn.<tailnet>.ts.net/oauth2/callback
 https://argocd.<tailnet>.ts.net/oauth2/callback
 ```
 
-### 3. Enable ArgoCD (after testing Longhorn)
+**Allowed Logout URLs:**
+```
+https://longhorn.<tailnet>.ts.net
+https://argocd.<tailnet>.ts.net
+```
 
-1. Create `manifests/network/tailscale-services/argocd.yaml` (copy from longhorn.yaml)
-2. Rename: `argocd-ingress.yaml.disabled` → `argocd-ingress.yaml`
-3. Add argocd host to `oauth2-proxy-ingress.yaml`
-4. Add ArgoCD callback URL to Auth0
+**Allowed Web Origins:**
+```
+https://longhorn.<tailnet>.ts.net
+https://argocd.<tailnet>.ts.net
+```
+
+### 3. Enable/Disable Services
+
+Edit `charts/protected-services/values.yaml`:
+```yaml
+services:
+  longhorn:
+    enabled: true   # or false
+  argocd:
+    enabled: true   # or false
+```
 
 ## Sync Waves
 
@@ -56,45 +71,45 @@ https://argocd.<tailnet>.ts.net/oauth2/callback
 | 9 | Tailscale Credentials |
 | 10 | Tailscale Operator |
 | 12 | NGINX Ingress Controller |
-| 13 | Tailscale Services (LoadBalancers) |
 | 14 | Auth0 Credentials |
 | 15 | oauth2-proxy |
-| 17 | Protected Ingresses |
+| 17 | Protected Services (Helm chart) |
 
-## Files Created
+## Files
 
 ```
 apps/templates/network/
 ├── nginx-ingress.yaml           # Wave 12
-├── tailscale-services.yaml      # Wave 13
 ├── auth0-credentials.yaml       # Wave 14
 ├── oauth2-proxy.yaml            # Wave 15
-└── protected-ingresses.yaml     # Wave 17
+└── protected-services.yaml      # Wave 17
+
+charts/protected-services/
+├── Chart.yaml
+├── values.yaml                  # <-- CHANGE TAILNET HERE
+└── templates/
+    ├── tailscale-services.yaml  # Creates LB per service
+    ├── ingresses.yaml           # Protected ingresses
+    └── oauth2-proxy-ingress.yaml
 
 helm-values/network/
 ├── nginx-ingress.yaml
 └── oauth2-proxy.yaml
 
 manifests/network/
-├── tailscale-services/
-│   └── longhorn.yaml            # Add argocd.yaml when ready
-├── auth0-credentials/
-│   ├── namespace.yaml
-│   └── external-secret.yaml
-└── ingresses/
-    ├── longhorn-ingress.yaml
-    ├── oauth2-proxy-ingress.yaml
-    └── argocd-ingress.yaml.disabled  # Enable after testing
+└── auth0-credentials/
+    ├── namespace.yaml
+    └── external-secret.yaml
 ```
 
-## Doppler Secrets
+## Doppler Secrets (shared config)
 
 | Key | Where to get |
 |-----|--------------|
 | `AUTH0_DOMAIN` | Auth0 Dashboard → Settings → Domain |
 | `AUTH0_CLIENT_ID_OAUTH2_PROXY` | Auth0 → Applications → oauth2-proxy → Client ID |
 | `AUTH0_CLIENT_SECRET_OAUTH2_PROXY` | Auth0 → Applications → oauth2-proxy → Client Secret |
-| `OAUTH2_PROXY_COOKIE_SECRET` | Generate: `openssl rand -base64 32 \| head -c 32` |
+| `OAUTH2_PROXY_COOKIE_SECRET` | Generate: `head -c 32 /dev/urandom \| base64 \| head -c 32` |
 
 ## Auth0 Setup
 
@@ -104,14 +119,15 @@ See: [docs/phase5/03-auth0-setup.md](docs/phase5/03-auth0-setup.md)
 
 - [ ] Auth0 tenant created
 - [ ] Auth0 Application created (Regular Web App)
-- [ ] Callback URLs configured in Auth0
-- [ ] Doppler secrets added
-- [ ] **Ingress hosts updated with real tailnet name**
+- [ ] Callback URLs configured in Auth0 (without `internal.`!)
+- [ ] Doppler secrets added to `shared` config
+- [ ] `charts/protected-services/values.yaml` - tailnet updated
 - [ ] Git push → ArgoCD syncs
 
 ## Post-Deploy Verification
 
 - [ ] NGINX Ingress Controller running
 - [ ] oauth2-proxy running
+- [ ] Tailscale services created: `kubectl get svc -n ingress-nginx`
 - [ ] Access `https://longhorn.<tailnet>.ts.net` → Auth0 login
-- [ ] (Later) Enable and test ArgoCD
+- [ ] Access `https://argocd.<tailnet>.ts.net` → Auth0 login
