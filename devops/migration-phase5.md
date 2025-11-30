@@ -3,15 +3,15 @@
 ## Architecture
 
 ```
-Tailscale VPN → NGINX Ingress → oauth2-proxy → Services
-     ↓              ↓               ↓
-  Network       Routing          Auth0 OIDC
-  Security      + Auth           Authentication
+Tailscale LB (per service) → NGINX Ingress → oauth2-proxy → Backend
+        ↓                         ↓               ↓
+  longhorn.ts.net            Host routing    Auth0 OIDC
+  argocd.ts.net              + auth-url      Authentication
 ```
 
 ## Current State (After Migration)
 
-- Tailscale Operator + Service (exposes NGINX to tailnet)
+- Tailscale Operator + LoadBalancer per service (separate hostnames)
 - NGINX Ingress Controller (routing with auth annotations)
 - oauth2-proxy + Auth0 (centralized OIDC authentication)
 - No Redis (cookie-based sessions)
@@ -44,9 +44,10 @@ https://argocd.<tailnet>.ts.net/oauth2/callback
 
 ### 3. Enable ArgoCD (after testing Longhorn)
 
-1. Rename: `argocd-ingress.yaml.disabled` → `argocd-ingress.yaml`
-2. Uncomment argocd host in `oauth2-proxy-ingress.yaml`
-3. Add ArgoCD callback URL to Auth0
+1. Create `manifests/network/tailscale-services/argocd.yaml` (copy from longhorn.yaml)
+2. Rename: `argocd-ingress.yaml.disabled` → `argocd-ingress.yaml`
+3. Add argocd host to `oauth2-proxy-ingress.yaml`
+4. Add ArgoCD callback URL to Auth0
 
 ## Sync Waves
 
@@ -55,7 +56,7 @@ https://argocd.<tailnet>.ts.net/oauth2/callback
 | 9 | Tailscale Credentials |
 | 10 | Tailscale Operator |
 | 12 | NGINX Ingress Controller |
-| 13 | Tailscale NGINX Service |
+| 13 | Tailscale Services (LoadBalancers) |
 | 14 | Auth0 Credentials |
 | 15 | oauth2-proxy |
 | 17 | Protected Ingresses |
@@ -65,7 +66,7 @@ https://argocd.<tailnet>.ts.net/oauth2/callback
 ```
 apps/templates/network/
 ├── nginx-ingress.yaml           # Wave 12
-├── tailscale-nginx-service.yaml # Wave 13
+├── tailscale-services.yaml      # Wave 13
 ├── auth0-credentials.yaml       # Wave 14
 ├── oauth2-proxy.yaml            # Wave 15
 └── protected-ingresses.yaml     # Wave 17
@@ -75,7 +76,8 @@ helm-values/network/
 └── oauth2-proxy.yaml
 
 manifests/network/
-├── tailscale-nginx-service/service.yaml
+├── tailscale-services/
+│   └── longhorn.yaml            # Add argocd.yaml when ready
 ├── auth0-credentials/
 │   ├── namespace.yaml
 │   └── external-secret.yaml
