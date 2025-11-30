@@ -16,6 +16,38 @@ Tailscale VPN → NGINX Ingress → oauth2-proxy → Services
 - oauth2-proxy + Auth0 (centralized OIDC authentication)
 - No Redis (cookie-based sessions)
 
+## Manual Changes Required
+
+**IMPORTANT:** These files contain example values that must be changed:
+
+### 1. Tailnet Hostname
+
+Find your tailnet name:
+- Tailscale Admin Console → Settings → General → Tailnet name
+- Or: `kubectl get svc -n tailscale`
+
+Update in these files (replace `tail876052` with your tailnet):
+
+| File | What to change |
+|------|----------------|
+| `manifests/network/ingresses/longhorn-ingress.yaml` | `host: longhorn.<tailnet>.ts.net` |
+| `manifests/network/ingresses/oauth2-proxy-ingress.yaml` | All hosts |
+| `manifests/network/ingresses/argocd-ingress.yaml.disabled` | `host: argocd.<tailnet>.ts.net` |
+
+### 2. Auth0 Callback URLs
+
+Add to Auth0 Application → Allowed Callback URLs:
+```
+https://longhorn.<tailnet>.ts.net/oauth2/callback
+https://argocd.<tailnet>.ts.net/oauth2/callback
+```
+
+### 3. Enable ArgoCD (after testing Longhorn)
+
+1. Rename: `argocd-ingress.yaml.disabled` → `argocd-ingress.yaml`
+2. Uncomment argocd host in `oauth2-proxy-ingress.yaml`
+3. Add ArgoCD callback URL to Auth0
+
 ## Sync Waves
 
 | Wave | Component |
@@ -48,9 +80,9 @@ manifests/network/
 │   ├── namespace.yaml
 │   └── external-secret.yaml
 └── ingresses/
-    ├── argocd-ingress.yaml
     ├── longhorn-ingress.yaml
-    └── oauth2-proxy-ingress.yaml
+    ├── oauth2-proxy-ingress.yaml
+    └── argocd-ingress.yaml.disabled  # Enable after testing
 ```
 
 ## Doppler Secrets
@@ -72,12 +104,12 @@ See: [docs/phase5/03-auth0-setup.md](docs/phase5/03-auth0-setup.md)
 - [ ] Auth0 Application created (Regular Web App)
 - [ ] Callback URLs configured in Auth0
 - [ ] Doppler secrets added
-- [ ] Ingress hosts updated with real Tailscale hostname
+- [ ] **Ingress hosts updated with real tailnet name**
 - [ ] Git push → ArgoCD syncs
 
 ## Post-Deploy Verification
 
 - [ ] NGINX Ingress Controller running
 - [ ] oauth2-proxy running
-- [ ] Access `https://argocd.internal.<tailnet>.ts.net` → Auth0 login
-- [ ] Access `https://longhorn.internal.<tailnet>.ts.net` → Auth0 login
+- [ ] Access `https://longhorn.<tailnet>.ts.net` → Auth0 login
+- [ ] (Later) Enable and test ArgoCD
