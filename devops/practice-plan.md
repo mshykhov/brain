@@ -198,6 +198,7 @@ example-deploy/
 | 20 | Cloudflare Credentials |
 | 21 | Cloudflare Tunnel |
 | 25 | Application Services |
+| 29 | Node Tuning (sysctl) |
 | 30 | kube-prometheus-stack |
 | 32 | Loki |
 | 33 | Alloy (log collection) |
