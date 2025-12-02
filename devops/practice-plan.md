@@ -135,10 +135,36 @@ User → Tailscale VPN → Tailscale Ingress → NGINX → oauth2-proxy → Back
 
 ## Фаза 8: Observability
 
-- [ ] kube-prometheus-stack (Prometheus + Grafana)
-- [ ] Loki + Promtail (log aggregation)
-- [ ] Grafana OIDC (через oauth2-proxy)
-- [ ] ServiceMonitor для приложения
+**Status:** GitOps ready, waiting for push to deploy
+
+### Компоненты
+- [x] kube-prometheus-stack 79.10.0 (Prometheus + Grafana)
+- [x] Loki 6.46.0 (SingleBinary mode, log storage)
+- [x] Alloy 1.4.0 (log collection, replaces deprecated Promtail)
+- [x] Grafana anonymous mode (за oauth2-proxy)
+- [x] ServiceMonitor для example-api
+
+### Файлы
+```
+example-infrastructure/
+├── apps/templates/monitoring/
+│   ├── kube-prometheus-stack.yaml  # wave 30
+│   ├── loki.yaml                   # wave 32
+│   └── alloy.yaml                  # wave 33
+├── helm-values/monitoring/
+│   ├── kube-prometheus-stack.yaml
+│   ├── loki.yaml
+│   └── alloy.yaml
+└── charts/protected-services/values.yaml  # + grafana service
+
+example-deploy/
+├── _library/templates/_servicemonitor.tpl
+└── services/example-api/
+    ├── templates/servicemonitor.yaml
+    └── values.yaml  # + serviceMonitor config
+```
+
+Дока: [docs/phase8/](docs/phase8/)
 
 ## Фаза 9: Data
 
