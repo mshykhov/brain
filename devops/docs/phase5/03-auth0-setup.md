@@ -1,56 +1,45 @@
-# Auth0 Setup for oauth2-proxy
+# Auth0 Setup для oauth2-proxy
 
-## Dev vs Prd: Which to Use?
-
-### Infrastructure Services (shared)
-
-ArgoCD, Longhorn, Grafana - это **инфраструктурные** сервисы. Они управляют и dev, и prd окружениями, поэтому используют **shared** config:
-
-| Service | Doppler Config | Reason |
-|---------|---------------|--------|
-| oauth2-proxy | `shared` | Защищает инфра-сервисы |
-| ArgoCD | `shared` | Деплоит в dev и prd |
-| Longhorn | `shared` | Storage для всех окружений |
-
-### Application Auth (per environment)
-
-Если API нужна Auth0 авторизация:
-
-| Service | Doppler Config | Reason |
-|---------|---------------|--------|
-| example-api | `dev` / `prd` | Разные клиенты/аудитории |
-
-### Doppler Structure
+## Архитектура аутентификации
 
 ```
-example (project)
-├── shared           ← Infrastructure Auth0
-│   ├── AUTH0_DOMAIN
-│   ├── AUTH0_CLIENT_ID_OAUTH2_PROXY
-│   ├── AUTH0_CLIENT_SECRET_OAUTH2_PROXY
-│   └── OAUTH2_PROXY_COOKIE_SECRET
-├── dev              ← App-specific (future)
-│   └── AUTH0_CLIENT_ID_API (if needed)
-└── prd              ← App-specific (future)
-    └── AUTH0_CLIENT_ID_API (if needed)
+User → Tailscale VPN → Tailscale Ingress → NGINX → oauth2-proxy → Backend
+                                              ↓
+                                    auth-url check
+                                              ↓
+                                    Auth0 OIDC login
+                                              ↓
+                                    Groups from Action
 ```
 
-## 1. Create Auth0 Tenant
+**Важно:** Один Auth0 Application для oauth2-proxy защищает все сервисы (ArgoCD, Longhorn, Grafana). ArgoCD использует анонимный доступ за oauth2-proxy.
 
-1. Go to [auth0.com](https://auth0.com) → Sign Up
-2. Create tenant (e.g., `example-infra` or `example-dev`)
-3. Note your domain: `example-infra.auth0.com`
+## Doppler Secrets
 
-> **Naming:** Use `-infra` suffix to distinguish from app-level tenants, or just use one tenant for everything.
+| Key | Где брать | Описание |
+|-----|-----------|----------|
+| `AUTH0_CLIENT_SECRET` | Auth0 → Applications | Client Secret |
+| `OAUTH2_PROXY_COOKIE_SECRET` | `openssl rand -base64 32 \| head -c 32` | Шифрование cookies |
+| `OAUTH2_PROXY_REDIS_PASSWORD` | `openssl rand -base64 32` | Пароль Redis |
 
-## 2. Create Application
+**Non-secret values** (в `apps/values.yaml`):
+- `auth0.domain` — Auth0 Domain
+- `auth0.clientId` — Client ID
+
+## 1. Создание Auth0 Tenant
+
+1. [auth0.com](https://auth0.com) → Sign Up
+2. Create tenant (e.g., `example-dev`)
+3. Запомни domain: `example-dev.us.auth0.com`
+
+## 2. Создание Application
 
 1. Auth0 Dashboard → Applications → Create Application
 2. Name: `oauth2-proxy`
 3. Type: **Regular Web Application**
 4. Click Create
 
-## 3. Configure Application Settings
+## 3. Application Settings
 
 ### Basic Information
 - **Name**: oauth2-proxy
@@ -60,106 +49,146 @@ example (project)
 
 **Allowed Callback URLs:**
 ```
-https://argocd.internal.<tailnet>.ts.net/oauth2/callback,
-https://longhorn.internal.<tailnet>.ts.net/oauth2/callback
+https://argocd.<tailnet>.ts.net/oauth2/callback,
+https://longhorn.<tailnet>.ts.net/oauth2/callback
 ```
-
-> Replace `<tailnet>` with your actual tailnet name (e.g., `tailnet-abc123`)
 
 **Allowed Logout URLs:**
 ```
-https://argocd.internal.<tailnet>.ts.net,
-https://longhorn.internal.<tailnet>.ts.net
+https://argocd.<tailnet>.ts.net,
+https://longhorn.<tailnet>.ts.net
 ```
 
 **Allowed Web Origins:**
 ```
-https://argocd.internal.<tailnet>.ts.net,
-https://longhorn.internal.<tailnet>.ts.net
+https://argocd.<tailnet>.ts.net,
+https://longhorn.<tailnet>.ts.net
 ```
 
-### Wildcard Option (Not Recommended for Production)
+> Замени `<tailnet>` на твой tailnet (e.g., `tail876052`)
 
-Auth0 supports wildcards for subdomains:
-```
-https://*.internal.<tailnet>.ts.net/oauth2/callback
-```
+## 4. Auth0 Action для Groups
 
-But Auth0 warns: "Avoid using wildcard placeholders in production as it can make your application vulnerable."
+**КРИТИЧЕСКИ ВАЖНО:** Auth0 не включает groups/roles в ID token по умолчанию. Нужен Action.
 
-## 4. Get Credentials
+### Создание Action
 
-From Application Settings page:
-- **Domain** → `AUTH0_DOMAIN` (e.g., `example-infra.auth0.com`)
-- **Client ID** → `AUTH0_CLIENT_ID_OAUTH2_PROXY`
-- **Client Secret** → `AUTH0_CLIENT_SECRET_OAUTH2_PROXY`
+1. Auth0 Dashboard → Actions → Library → Build Custom
+2. Name: `Add Groups to Token`
+3. Trigger: `Login / Post Login`
+4. Code:
 
-## 5. Generate Cookie Secret
-
-```bash
-openssl rand -base64 32 | head -c 32
-```
-
-This becomes `OAUTH2_PROXY_COOKIE_SECRET`
-
-## 6. Add to Doppler
-
-Project: `example` → Config: **`shared`**
-
-| Key | Value |
-|-----|-------|
-| `AUTH0_DOMAIN` | `example-infra.auth0.com` |
-| `AUTH0_CLIENT_ID_OAUTH2_PROXY` | (from Auth0) |
-| `AUTH0_CLIENT_SECRET_OAUTH2_PROXY` | (from Auth0) |
-| `OAUTH2_PROXY_COOKIE_SECRET` | (generated) |
-
-**Why shared?**
-- oauth2-proxy protects infrastructure services
-- These services manage both dev and prd environments
-- One Auth0 app for all infra access
-
-## 7. Find Your Tailnet Name
-
-After Tailscale Operator deploys, check the service:
-
-```bash
-kubectl get svc -n ingress-nginx nginx-tailscale
+```javascript
+exports.onExecutePostLogin = async (event, api) => {
+  const namespace = 'https://ns';
+  if (event.authorization && event.authorization.roles) {
+    api.idToken.setCustomClaim(`${namespace}/groups`, event.authorization.roles);
+    api.accessToken.setCustomClaim(`${namespace}/groups`, event.authorization.roles);
+  }
+};
 ```
 
-The external IP will show your tailnet hostname (e.g., `tail876052.ts.net`)
+5. Deploy
 
-Or check Tailscale Admin Console → Machines
+### Добавление в Flow
 
-## 8. Update Ingress Hosts
+1. Actions → Flows → Login
+2. Drag `Add Groups to Token` в Flow
+3. Apply
 
-Edit files in `manifests/network/ingresses/`:
-- Replace `tail876052` with your actual tailnet name
-- Format: `<service>.<tailnet>.ts.net` (e.g., `longhorn.tail876052.ts.net`)
+### Почему namespaced claim?
 
-## Optional: User Management
+Auth0 требует namespace для custom claims. Без namespace (`https://ns/groups`) claim будет проигнорирован.
 
-### Restrict Access by Email Domain
+В oauth2-proxy это настраивается через:
+```
+oidc_groups_claim = "https://ns/groups"
+```
 
-In oauth2-proxy helm values, change:
+## 5. Создание Roles
+
+1. User Management → Roles → Create Role
+2. Создай роли:
+   - `infra-admins` — полный доступ ко всему
+   - `argocd-admins` — доступ к ArgoCD
+   - `longhorn-admins` — доступ к Longhorn
+
+### Назначение ролей пользователям
+
+1. User Management → Users → (выбери пользователя)
+2. Roles → Assign Roles
+3. Выбери нужные роли
+
+## 6. Group-Based Authorization
+
+Roles из Auth0 попадают в `https://ns/groups` claim. oauth2-proxy проверяет группы через query param:
+
 ```yaml
-config:
-  configFile: |-
-    email_domains = [ "yourcompany.com" ]
+# В ingress annotations
+nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy/oauth2/auth?allowed_groups=infra-admins,argocd-admins"
 ```
 
-### Add Users
+### Как это работает
 
-Auth0 Dashboard → User Management → Users → Create User
+1. User логинится через Auth0
+2. Auth0 Action добавляет roles в `https://ns/groups`
+3. oauth2-proxy получает groups из token
+4. NGINX передаёт `allowed_groups` в auth-url
+5. oauth2-proxy проверяет пересечение
+
+## 7. Проверка
+
+### Проверить token содержит groups
+
+```bash
+# Логи oauth2-proxy
+kubectl logs -n oauth2-proxy -l app.kubernetes.io/name=oauth2-proxy
+
+# Должно быть что-то вроде:
+# groups: [infra-admins argocd-admins]
+```
+
+### Тестовый login
+
+```bash
+# Открой браузер
+https://argocd.<tailnet>.ts.net
+
+# Должен редиректить на Auth0
+# После login → ArgoCD UI
+```
+
+### Проверить роли пользователя в Auth0
+
+1. Auth0 Dashboard → User Management → Users
+2. Выбери пользователя → Roles tab
+3. Должны быть назначены роли
 
 ## Troubleshooting
 
-### Check oauth2-proxy logs
-```bash
-kubectl logs -n oauth2-proxy -l app.kubernetes.io/name=oauth2-proxy
-```
+### "Unable to verify OIDC token"
 
-### Common Issues
+- Проверь `AUTH0_DOMAIN` без `https://` prefix
+- Проверь что oauth2-proxy может достучаться до Auth0
 
-1. **Callback URL mismatch**: Ensure Auth0 callback URLs exactly match ingress hosts
-2. **Cookie issues**: Try clearing browser cookies
-3. **OIDC discovery failed**: Check AUTH0_DOMAIN is correct (no `https://` prefix)
+### Groups пустые
+
+1. Проверь что Action добавлен в Login Flow
+2. Проверь что Action deployed
+3. Проверь что у пользователя есть Roles
+4. Проверь `oidc_groups_claim = "https://ns/groups"` в oauth2-proxy config
+
+### 403 после login
+
+- Groups не совпадают с `allowed_groups`
+- Проверь роли пользователя в Auth0
+- Проверь spelling групп (case-sensitive)
+
+### Callback URL mismatch
+
+- URL в Auth0 должны точно совпадать с hosts в ingress
+- Включая протокол (`https://`) и путь (`/oauth2/callback`)
+
+## Следующий шаг
+
+[04-argocd-anonymous.md](04-argocd-anonymous.md) — настройка ArgoCD с анонимным доступом
