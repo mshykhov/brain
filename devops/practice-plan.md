@@ -84,12 +84,12 @@ User → Tailscale VPN → Tailscale Ingress → NGINX → oauth2-proxy → Back
 **Статус:** GitOps ready, waiting for Cloudflare setup
 
 ### 6.1 Cloudflare Setup
-- [ ] Cloudflare account (free)
-- [ ] Domain (~$10/year via Cloudflare Registrar)
-- [ ] Tunnel created in Zero Trust Dashboard
+- [x] Cloudflare account (free) ✅ 2025-12-02
+- [x] Domain (~$10/year via Cloudflare Registrar) ✅ 2025-12-02
+- [x] Tunnel created in Zero Trust Dashboard ✅ 2025-12-02
 
 ### 6.2 Secrets
-- [ ] Doppler shared: `CF_TUNNEL_TOKEN`
+- [x] Doppler shared: `CF_TUNNEL_TOKEN` ✅ 2025-12-02
 
 ### 6.3 Kubernetes (GitOps ready ✅)
 - [x] ExternalSecret: `charts/credentials/templates/cloudflare.yaml`
