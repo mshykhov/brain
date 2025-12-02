@@ -56,7 +56,7 @@ name: cloudflare-tunnel
 description: Cloudflared tunnel connector
 type: application
 version: 1.0.0
-appVersion: "2024.11.0"
+appVersion: "2025.11.1"
 ```
 
 ### values.yaml
@@ -65,7 +65,7 @@ replicas: 2
 
 image:
   repository: cloudflare/cloudflared
-  tag: "2024.11.0"
+  tag: "2025.11.1"
   pullPolicy: IfNotPresent
 
 resources:
@@ -86,6 +86,9 @@ metadata:
 ```
 
 ### templates/deployment.yaml
+
+> Based on official Cloudflare docs: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/deploy-tunnels/deployment-guides/kubernetes/
+
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -105,6 +108,7 @@ spec:
       containers:
         - name: cloudflared
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - tunnel
             - --no-autoupdate
@@ -126,17 +130,9 @@ spec:
             httpGet:
               path: /ready
               port: 2000
+            failureThreshold: 1
             initialDelaySeconds: 10
             periodSeconds: 10
-          securityContext:
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
 ```
 
 ## 3. ArgoCD Application
