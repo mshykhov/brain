@@ -145,7 +145,8 @@ User → Tailscale VPN → Tailscale Ingress → NGINX → oauth2-proxy → Back
 | 12 | NGINX Ingress Controller |
 | 15 | oauth2-proxy |
 | 17 | Protected Services |
-| 20+ | Cloudflare (future) |
+| 20 | Cloudflare Credentials |
+| 21 | Cloudflare Tunnel |
 | 25 | Application Services |
 
 ---
@@ -160,6 +161,7 @@ User → Tailscale VPN → Tailscale Ingress → NGINX → oauth2-proxy → Back
 | `AUTH0_CLIENT_SECRET` | Auth0 Client Secret |
 | `OAUTH2_PROXY_COOKIE_SECRET` | Cookie encryption |
 | `OAUTH2_PROXY_REDIS_PASSWORD` | Redis password |
+| `CF_TUNNEL_TOKEN` | Cloudflare Tunnel Token (Phase 6) |
 
 ### apps/values.yaml (non-secrets)
 | Key | Описание |
