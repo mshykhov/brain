@@ -78,35 +78,35 @@ AUTH0_AUDIENCE=https://your-api-identifier (optional)
 
 ---
 
-## Part 3: UI (example-ui)
+## Part 3: UI (example-ui) ✅
 
 ### 3.1 Fix Routing
 
-- [ ] `/` - redirect to `/public` (not login)
-- [ ] `/public` - accessible without auth (public endpoints testing)
-- [ ] `/login` - Auth0 login page
-- [ ] `/dashboard` - requires auth (private endpoints + user info)
+- [x] `/` - redirect to `/public` (not login)
+- [x] `/public` - accessible without auth (public endpoints testing)
+- [x] `/login` - Auth0 login page
+- [x] `/dashboard` - requires auth (private endpoints + user info)
 
 ### 3.2 Public Page Features
 
-- [ ] Test public API endpoints (health, info, time)
-- [ ] Show results in table
-- [ ] "Login" button to go to Auth0
+- [x] Test public API endpoints (health, info, time)
+- [x] Show results in table
+- [x] "Login" button to go to Auth0
 
 ### 3.3 Private Page Features (Dashboard)
 
-- [ ] Show user info (name, email, picture)
-- [ ] Show groups/roles from token
-- [ ] Test private API endpoints (me, protected)
-- [ ] Show JWT token (collapsed)
-- [ ] Logout button
+- [x] Show user info (name, email, picture)
+- [x] Show groups/roles from token
+- [x] Test private API endpoints (me, protected)
+- [x] Show JWT token (collapsed)
+- [x] Logout button
 
 ### 3.4 Auth0 Integration
 
-- [ ] Use `@auth0/auth0-react` v2.x
-- [ ] Configure audience for API access
-- [ ] Get access token for API calls
-- [ ] Handle token refresh
+- [x] Use `@auth0/auth0-react` v2.x
+- [x] Configure audience for API access
+- [x] Get access token for API calls
+- [x] Handle token refresh
 
 ---
 
