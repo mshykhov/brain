@@ -97,7 +97,7 @@ User → Tailscale VPN → Tailscale Ingress → NGINX → oauth2-proxy → Back
 - [x] ArgoCD Application: `apps/templates/network/cloudflare-tunnel.yaml`
 
 ### 6.4 Public Hostnames (Cloudflare Dashboard)
-- [ ] api.domain.com → example-api.prd:8080
+- [x] api.domain.com → example-api.prd:8080 ✅ 2025-12-02
 - [ ] app.domain.com → example-ui.prd:80 (future)
 
 > **Note:** DEV остаётся private (только через Tailscale VPN)
@@ -109,21 +109,45 @@ User → Tailscale VPN → Tailscale Ingress → NGINX → oauth2-proxy → Back
 
 Дока: [docs/phase6/](docs/phase6/)
 
-## Фаза 7: Data
+## Фаза 7: Testing UI
+
+**Stack:** Refine (React) + Auth0 + Ant Design
+
+### v1 — Basic Testing
+- [ ] Create `example-ui` repo
+- [ ] Public endpoints page (no auth)
+- [ ] Login via Auth0 (SPA Application)
+- [ ] Private endpoints page (requires auth)
+- [ ] Show current user info + roles
+
+### v2 — Role-Based Testing
+- [ ] Different views based on role (admin vs user)
+- [ ] Permission denied examples
+- [ ] API error handling UI
+
+### v3 — Data Management
+- [ ] DB viewer (read-only)
+- [ ] CRUD examples (create/edit/delete)
+- [ ] Kafka message viewer
+- [ ] Test data generator
+
+Дока: [docs/phase7/](docs/phase7/)
+
+## Фаза 8: Data
 
 - [ ] CloudNativePG operator
 - [ ] PostgreSQL cluster
 - [ ] Credentials через ESO
 - [ ] Подключить приложение к БД
 
-## Фаза 8: Observability
+## Фаза 9: Observability
 
 - [ ] kube-prometheus-stack
 - [ ] Loki + Promtail
 - [ ] Grafana OIDC (через oauth2-proxy)
 - [ ] ServiceMonitor для приложения
 
-## Фаза 9: Backup
+## Фаза 10: Backup
 
 - [ ] MinIO
 - [ ] Velero
