@@ -133,19 +133,19 @@ User → Tailscale VPN → Tailscale Ingress → NGINX → oauth2-proxy → Back
 
 Дока: [docs/phase7/](docs/phase7/)
 
-## Фаза 8: Data
+## Фаза 8: Observability
+
+- [ ] kube-prometheus-stack (Prometheus + Grafana)
+- [ ] Loki + Promtail (log aggregation)
+- [ ] Grafana OIDC (через oauth2-proxy)
+- [ ] ServiceMonitor для приложения
+
+## Фаза 9: Data
 
 - [ ] CloudNativePG operator
 - [ ] PostgreSQL cluster
 - [ ] Credentials через ESO
 - [ ] Подключить приложение к БД
-
-## Фаза 9: Observability
-
-- [ ] kube-prometheus-stack
-- [ ] Loki + Promtail
-- [ ] Grafana OIDC (через oauth2-proxy)
-- [ ] ServiceMonitor для приложения
 
 ## Фаза 10: Backup
 
