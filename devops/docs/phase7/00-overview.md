@@ -1,167 +1,60 @@
-# Phase 7: Testing UI
+# Phase 7: Application Configuration
 
-## Зачем
+## Overview
 
-Internal UI для тестирования API:
-- Public endpoints (без авторизации)
-- Private endpoints (Auth0 login)
-- Role-based access testing
-- CRUD examples для проверки permissions
-
-## Stack
-
-**Refine** — React framework для admin/internal tools
-- Auth0 integration из коробки
-- CRUD генерируется автоматически
-- Role-based access control
-- Красивый UI (Ant Design / Material UI / Chakra)
-
-Docs: https://refine.dev/docs/
-
-## Roadmap
-
-### v1 — Basic Testing
-- [ ] Public endpoints page (no auth required)
-- [ ] Login via Auth0
-- [ ] Private endpoints page (requires auth)
-- [ ] Show current user info + roles
-
-### v2 — Role-Based Testing
-- [ ] Different views based on role (admin vs user)
-- [ ] Permission denied examples
-- [ ] API error handling UI
-
-### v3 — Data Management
-- [ ] DB viewer (read-only)
-- [ ] CRUD examples (create/edit/delete)
-- [ ] Kafka message viewer
-- [ ] Test data generator
+Конфигурация приложений (example-api, example-ui) для работы в Kubernetes с Auth0, Tailscale и Cloudflare.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Testing UI (Refine)                   │
-│                                                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
-│  │ Public Page  │  │ Private Page │  │  Admin Page  │   │
-│  │  (no auth)   │  │ (auth req)   │  │ (admin role) │   │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘   │
-│         │                 │                  │           │
-│         └────────────┬────┴──────────────────┘           │
-│                      │                                   │
-│              ┌───────▼───────┐                          │
-│              │  Auth0 Login  │                          │
-│              │  (roles/groups)│                          │
-│              └───────┬───────┘                          │
-└──────────────────────┼──────────────────────────────────┘
-                       │
-              ┌────────▼────────┐
-              │   example-api   │
-              │  (Spring Boot)  │
-              └─────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              PRODUCTION                                      │
+│                                                                              │
+│  Internet → Cloudflare Tunnel → example-api-prd:8080                        │
+│                               → example-ui-prd:8080                          │
+│                                                                              │
+│  Auth: Auth0 (SPA flow для UI, JWT validation для API)                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              DEVELOPMENT                                     │
+│                                                                              │
+│  Tailscale VPN → Tailscale Ingress → NGINX → example-api-dev:8080          │
+│                                            → example-ui-dev:8080            │
+│                                                                              │
+│  Auth: Tailscale only (no OAuth2-Proxy for dev services)                    │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Deployment Options
+## Services
 
-### Option A: Static (Vercel/Cloudflare Pages)
-- Простой деплой
-- Public access или Cloudflare Access
-- Бесплатно
+| Service | DEV URL | PRD URL |
+|---------|---------|---------|
+| example-api | `https://example-api-dev.tail876052.ts.net` | `https://api.untrustedonline.org` |
+| example-ui | `https://example-ui-dev.tail876052.ts.net` | `https://app.untrustedonline.org` |
 
-### Option B: Kubernetes (in cluster)
-- За oauth2-proxy (как ArgoCD)
-- Internal only (Tailscale)
-- Full control
+## Auth0 Applications
 
-## Auth0 Configuration
+**Два разных типа приложений:**
 
-Нужен отдельный Auth0 Application (SPA):
-1. Auth0 → Applications → Create → Single Page Application
-2. Allowed Callback URLs: `http://localhost:3000/callback, https://ui.<domain>/callback`
-3. Allowed Logout URLs: `http://localhost:3000, https://ui.<domain>`
-4. Allowed Web Origins: same
+| Application | Type | Purpose |
+|-------------|------|---------|
+| oauth2-proxy | Regular Web Application | Защита ArgoCD, Longhorn (server-side) |
+| example-ui-dev | Single Page Application | DEV UI (browser-based) |
+| example-ui-prd | Single Page Application | PRD UI (browser-based) |
 
-## API Requirements
+## Doppler Configuration
 
-example-api должен иметь:
+| Config | Purpose |
+|--------|---------|
+| `shared` | Общие секреты (Cloudflare, Auth0 для oauth2-proxy) |
+| `dev` | DEV environment (Doppler project branch) |
+| `prd` | PRD environment |
 
-```kotlin
-// Public endpoint
-@GetMapping("/api/public/health")
-fun health(): Map<String, String>
+## Documentation
 
-// Private endpoint (any authenticated user)
-@GetMapping("/api/private/me")
-@PreAuthorize("isAuthenticated()")
-fun me(principal: Principal): UserInfo
-
-// Admin only endpoint
-@GetMapping("/api/admin/users")
-@PreAuthorize("hasRole('admin')")
-fun listUsers(): List<User>
-
-// Role-based endpoint
-@GetMapping("/api/private/data")
-@PreAuthorize("hasAnyRole('user', 'admin')")
-fun getData(): List<Data>
-```
-
-## Tech Stack
-
-| Component | Choice | Why |
-|-----------|--------|-----|
-| Framework | Refine | Best for admin/internal tools |
-| UI Library | Ant Design | Clean, feature-rich |
-| Auth | @refinedev/auth0 | Official provider |
-| API Client | REST (axios) | Simple |
-| State | React Query | Built into Refine |
-
-## Getting Started
-
-```bash
-# Create project
-npm create refine-app@latest example-ui
-
-# Select:
-# - refine-react
-# - Ant Design
-# - REST API
-# - Auth0
-
-cd example-ui
-npm run dev
-```
-
-## Files Structure
-
-```
-example-ui/
-├── src/
-│   ├── App.tsx
-│   ├── authProvider.ts      # Auth0 config
-│   ├── dataProvider.ts      # API config
-│   ├── pages/
-│   │   ├── public/          # No auth required
-│   │   ├── private/         # Auth required
-│   │   └── admin/           # Admin role required
-│   └── components/
-│       └── RoleGuard.tsx    # Role-based rendering
-├── package.json
-└── .env                     # Auth0 credentials
-```
-
-## Doppler Secrets (if deployed to K8s)
-
-| Key | Description |
-|-----|-------------|
-| `AUTH0_CLIENT_ID_UI` | SPA Client ID |
-| `AUTH0_AUDIENCE` | API identifier |
-
-## Next Steps
-
-1. Create example-ui repo
-2. Setup Refine with Auth0
-3. Create public/private pages
-4. Add role-based components
-5. Deploy (Vercel or K8s)
+1. [01-setup.md](01-setup.md) - Quick start guide
+2. [02-auth0-spa.md](02-auth0-spa.md) - Auth0 SPA configuration
+3. [03-spring-boot-proxy.md](03-spring-boot-proxy.md) - Spring Boot behind reverse proxy
+4. [04-doppler-secrets.md](04-doppler-secrets.md) - All Doppler secrets reference
+5. [05-dev-services.md](05-dev-services.md) - Dev services (Tailscale only, no OAuth2)
