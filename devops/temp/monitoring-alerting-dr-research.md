@@ -210,23 +210,61 @@ data:
 
 - **ArgoCD UI** — deployment status, sync status, health
 
-### Optional: Uptime Kuma (Simple Status Page)
+### Uptime Kuma (Recommended for Quick Status View)
+
+**Why Uptime Kuma over just Grafana?**
+
+| Uptime Kuma | Grafana |
+|-------------|---------|
+| Open → immediately see what's up/down | Need to navigate dashboards |
+| Traffic light UI (green/red) | Graphs need interpretation |
+| 5 min setup | Need to build dashboards |
+| Status page for sharing | No built-in status page |
+
+**Community recommendation:** Use BOTH together
+- Uptime Kuma → quick glance "is everything ok?"
+- Grafana → deep analysis when something breaks
+
+**ArgoCD UI limitation:** Shows sync/deploy status, NOT "is service actually working?"
 
 ```yaml
-# Simple deployment
-apiVersion: apps/v1
-kind: Deployment
+# Helm chart: https://github.com/k8s-at-home/charts (deprecated, use official image)
+# Or use official Helm: https://artifacthub.io/packages/helm/uptime-kuma/uptime-kuma
+apiVersion: argoproj.io/v1alpha1
+kind: Application
 metadata:
   name: uptime-kuma
+  namespace: argocd
 spec:
-  template:
-    spec:
-      containers:
-      - name: uptime-kuma
-        image: louislam/uptime-kuma:latest
-        ports:
-        - containerPort: 3001
+  project: default
+  source:
+    repoURL: https://dirsigler.github.io/uptime-kuma-helm
+    chart: uptime-kuma
+    targetRevision: "2.20.0"
+    helm:
+      values: |
+        persistence:
+          enabled: true
+          storageClass: longhorn
+          size: 2Gi
+        resources:
+          requests:
+            cpu: 50m
+            memory: 100Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
 ```
+
+**Resources:** ~100MB RAM, very lightweight
+
+**Sources:**
+- [Uptime Kuma vs Grafana comparison](https://cloudpap.com/blog/uptime-kuma-vs-grafana/)
+- [Hacker News discussion](https://news.ycombinator.com/item?id=31931458)
+- [Grafana dashboard for Uptime Kuma metrics](https://grafana.com/grafana/dashboards/18278-uptime-kuma/)
 
 ---
 
@@ -244,17 +282,17 @@ spec:
 ### Phase 1 (Critical)
 1. [ ] Configure Alertmanager → Telegram
 2. [ ] Setup CloudNativePG backup to OVH S3
-3. [ ] Test alert delivery (Watchdog alert)
+3. [ ] Deploy Uptime Kuma (quick status view)
+4. [ ] Test alert delivery (Watchdog alert)
 
 ### Phase 2 (Important)
-4. [ ] Install Velero + MinIO
-5. [ ] Configure ArgoCD notifications
-6. [ ] Test full DR scenario
+5. [ ] Install Velero + MinIO
+6. [ ] Configure ArgoCD notifications
+7. [ ] Test full DR scenario
 
 ### Phase 3 (Nice to have)
-7. [ ] Deploy Loki for logs
 8. [ ] Add custom Grafana dashboards
-9. [ ] Uptime Kuma status page
+9. [ ] Uptime Kuma → Prometheus metrics integration
 
 ---
 
