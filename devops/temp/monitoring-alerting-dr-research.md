@@ -11,9 +11,14 @@
 - **Alertmanager** — installed, 2Gi storage (needs routing config)
 - **Node Exporter** — node metrics
 - **kube-state-metrics** — kubernetes metrics
-- **Loki datasource** — configured in Grafana (Loki not deployed yet)
+- **Loki datasource** — configured in Grafana
 
-**Chart version:** 79.10.0
+### Loki ✅
+- **Loki** — log aggregation, SingleBinary mode
+- **Chart version:** 6.46.0
+- **Location:** `example-infrastructure/apps/templates/monitoring/loki.yaml`
+
+**kube-prometheus-stack version:** 79.10.0
 **Location:** `example-infrastructure/apps/templates/monitoring/kube-prometheus-stack.yaml`
 **Values:** `example-infrastructure/helm-values/monitoring/kube-prometheus-stack.yaml`
 
@@ -41,10 +46,9 @@ podMonitorSelectorNilUsesHelmValues: false      # Discover ALL PodMonitors
 |-----------|--------|----------|
 | Alertmanager routing (Telegram/Discord) | ❌ Not configured | HIGH |
 | CloudNativePG S3 backup (OVH) | ❌ Not configured | HIGH |
+| Uptime Kuma (quick status view) | ❌ Not installed | HIGH |
 | Velero cluster backup | ❌ Not installed | MEDIUM |
 | ArgoCD notifications | ❌ Not configured | MEDIUM |
-| Loki (logs) | ❌ Not installed | LOW |
-| Uptime Kuma | ❌ Optional | LOW |
 
 ---
 
