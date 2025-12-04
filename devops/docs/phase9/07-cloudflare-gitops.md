@@ -60,6 +60,17 @@ cat ~/.cloudflared/<UUID>.json | base64 -w0
 | `CF_TUNNEL_CREDENTIALS` | base64 output from step 2 |
 | `CF_API_TOKEN` | API token from step 3 |
 
+After saving to Doppler, delete local credentials:
+```bash
+rm ~/.cloudflared/cert.pem
+rm ~/.cloudflared/<UUID>.json
+```
+
+- `cert.pem` - only needed for CLI operations (create/delete tunnels)
+- `<UUID>.json` - tunnel credentials (now in Doppler)
+
+To manage tunnels later: `cloudflared tunnel login`
+
 ### Step 5: Update Tunnel UUID
 
 In `apps/values.yaml`:
