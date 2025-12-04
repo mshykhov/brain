@@ -43,8 +43,10 @@ Edit `apps/values.yaml`:
 global:
   s3:
     endpoint: https://<ACCOUNT_ID>.r2.cloudflarestorage.com
-    bucket: velero-backups
     region: auto
+    buckets:
+      velero: velero-backups
+      cnpg: cnpg-backups
 ```
 
 ## Pricing

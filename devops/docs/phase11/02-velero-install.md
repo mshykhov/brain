@@ -26,7 +26,7 @@ sources:
           backupStorageLocation:
             - name: default
               provider: velero.io/aws
-              bucket: velero-backups
+              bucket: {{ .Values.global.s3.buckets.velero }}
               config:
                 region: {{ .Values.global.s3.region }}
                 s3Url: {{ .Values.global.s3.endpoint }}
