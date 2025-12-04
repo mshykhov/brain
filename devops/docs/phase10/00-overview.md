@@ -75,6 +75,35 @@ Production-ready alerting с Telegram notifications через Topics:
 | `TELEGRAM_TOPIC_INFO` | Thread ID for info/resolved |
 | `TELEGRAM_TOPIC_DEPLOYS` | Thread ID for ArgoCD deploys |
 
+## Quick Start Checklist
+
+### Phase 1: Telegram Setup
+- [ ] Create bot via @BotFather → get `TELEGRAM_BOT_TOKEN`
+- [ ] Create group "Homelab Alerts"
+- [ ] Enable Topics in group settings
+- [ ] Create topics: 🔴 Critical, 🟠 Warning, ⚪ Info, 🚀 Deploys
+- [ ] Add bot to group as admin
+- [ ] Get chat_id and topic IDs via getUpdates API
+- [ ] Save all to Doppler
+
+### Phase 2: Alertmanager Config
+- [ ] Create ExternalSecret for telegram-secrets
+- [ ] Update kube-prometheus-stack values with alertmanager config
+- [ ] Apply changes via ArgoCD sync
+
+### Phase 3: ArgoCD Notifications
+- [ ] Create ExternalSecret for argocd-notifications-secret
+- [ ] Create argocd-notifications-cm ConfigMap
+- [ ] Apply and verify
+
+### Phase 4: Testing
+- [ ] Test bot with curl
+- [ ] Verify Watchdog appears in Info topic
+- [ ] Create test PrometheusRule
+- [ ] Verify Critical/Warning routing
+- [ ] Test resolved notifications
+- [ ] Test ArgoCD deploy notifications
+
 ## Official Sources
 
 - [Alertmanager Configuration](https://prometheus.io/docs/alerting/latest/configuration/)
