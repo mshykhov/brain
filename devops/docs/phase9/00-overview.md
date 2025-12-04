@@ -46,6 +46,16 @@ Redis кэширование для микросервисов + production depl
 | ExternalSecret | Sync passwords от Doppler |
 | Reloader | Auto-restart pods при изменении secrets |
 | Cloudflare Tunnel | Public access для PRD services |
+| StringRedisTemplate | Direct Redis operations с TTL |
+
+## Documentation
+
+1. [Redis Operator](01-redis-operator.md) - OT Redis Operator setup
+2. [Redis Secrets](02-redis-secrets.md) - Doppler + ExternalSecret
+3. [Reloader](03-reloader.md) - autoReloadAll mode
+4. [Auth0 Refresh Tokens](04-auth0-refresh-tokens.md) - offline_access scope
+5. [Cloudflare Tunnel](05-cloudflare-tunnel.md) - PRD public access
+6. [API Cache](06-api-cache.md) - StringRedisTemplate implementation
 
 ## Key Decisions
 
