@@ -48,6 +48,7 @@ Production-ready alerting с Telegram notifications через Topics:
 | Topics | Threads within single Telegram group |
 | Inhibit Rules | Suppress redundant alerts |
 | Templates | Custom message formatting |
+| Uptime Kuma | Quick status page & uptime monitoring |
 
 ## Documentation
 
@@ -56,6 +57,7 @@ Production-ready alerting с Telegram notifications через Topics:
 3. [Built-in Alerts](03-builtin-alerts.md) - Important kube-prometheus alerts
 4. [ArgoCD Notifications](04-argocd-notifications.md) - Deployment notifications
 5. [Testing & Verification](05-testing.md) - How to test alerting
+6. [Uptime Kuma](06-uptime-kuma.md) - Quick status page & uptime monitoring
 
 ## Key Decisions
 
@@ -104,9 +106,18 @@ Production-ready alerting с Telegram notifications через Topics:
 - [ ] Test resolved notifications
 - [ ] Test ArgoCD deploy notifications
 
+### Phase 5: Uptime Kuma
+- [ ] Deploy Uptime Kuma via ArgoCD
+- [ ] Add to protected-services (Tailscale access)
+- [ ] Create admin account
+- [ ] Add monitors for all services
+- [ ] Create status page
+- [ ] Configure Telegram notifications
+
 ## Official Sources
 
 - [Alertmanager Configuration](https://prometheus.io/docs/alerting/latest/configuration/)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 - [kube-prometheus-stack Alerts](https://github.com/prometheus-operator/kube-prometheus)
 - [ArgoCD Notifications](https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/)
+- [Uptime Kuma](https://github.com/louislam/uptime-kuma)
