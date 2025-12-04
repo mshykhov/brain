@@ -140,6 +140,71 @@ kubectl get configmap -n cloudflare cloudflared-config -o yaml
 kubectl logs -n external-dns -l app.kubernetes.io/name=external-dns | grep -i error
 ```
 
+## External-DNS Configuration
+
+```yaml
+# helm-values/network/external-dns.yaml
+provider:
+  name: cloudflare
+
+env:
+  - name: CF_API_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: cloudflare-api-token
+        key: token
+
+extraArgs:
+  - --cloudflare-proxied
+  - --cloudflare-dns-records-per-page=5000
+  - --txt-prefix=extdns-      # Ownership tracking prefix
+
+domainFilters:
+  - untrustedonline.org       # Only manage this domain
+
+policy: sync
+txtOwnerId: external-dns
+logLevel: debug
+```
+
+### Key Settings
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| `domainFilters` | `[untrustedonline.org]` | Limit to specific domain |
+| `txt-prefix` | `extdns-` | TXT ownership records prefix |
+| `txtOwnerId` | `external-dns` | Cluster identifier |
+| `policy` | `sync` | Full sync (create/update/delete) |
+
+## Ownership & Migration
+
+External-DNS uses TXT records for ownership tracking:
+- Each CNAME gets a TXT record: `extdns-<hostname>`
+- Contains owner ID to prevent conflicts
+
+**Problem:** Manually created DNS records have no owner → External-DNS skips them.
+
+**Solution:** Delete manual records in Cloudflare Dashboard, let External-DNS recreate.
+
+**Prevention:**
+1. Never create DNS records manually for domains managed by External-DNS
+2. Use `--txt-prefix` to avoid TXT/CNAME conflicts
+3. Use unique `txtOwnerId` per cluster
+
+## ExternalSecret Template (Helm Escaping)
+
+When using ExternalSecret templates in Helm charts, escape Go templates:
+
+```yaml
+# charts/credentials/templates/cloudflare.yaml
+template:
+  data:
+    credentials.json: "{{ `{{ .credentials | b64dec }}` }}"
+```
+
+- `b64dec` - ESO function to decode base64
+- Backticks escape from Helm rendering
+
 ## Doppler Secrets
 
 | Key | Description |
