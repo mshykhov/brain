@@ -43,7 +43,7 @@ brew install cloudflared
 cloudflared tunnel login
 
 # Create tunnel (saves credentials to ~/.cloudflared/<UUID>.json)
-cloudflared tunnel create k8s-prd-tunnel
+cloudflared tunnel create k8s-tunnel
 
 # Get tunnel UUID
 cloudflared tunnel list
