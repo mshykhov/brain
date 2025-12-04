@@ -17,7 +17,7 @@
 sources:
   - repoURL: https://vmware-tanzu.github.io/helm-charts
     chart: velero
-    targetRevision: "8.0.0"
+    targetRevision: "11.2.0"
     helm:
       valueFiles:
         - $values/helm-values/backup/velero.yaml
@@ -75,14 +75,28 @@ velero backup-location get
 kubectl get secret -n velero velero-s3-credentials
 ```
 
+## Version Compatibility
+
+| Component | Version |
+|-----------|---------|
+| Velero | v1.17.1 |
+| Helm Chart | 11.2.0 |
+| AWS Plugin | v1.13.1 |
+
+Source: https://github.com/vmware-tanzu/velero-plugin-for-aws#compatibility
+
 ## CLI Installation
 
 ```bash
 # macOS
 brew install velero
 
-# Linux
+# Linux (amd64)
 wget https://github.com/vmware-tanzu/velero/releases/download/v1.17.1/velero-v1.17.1-linux-amd64.tar.gz
 tar -xvf velero-v1.17.1-linux-amd64.tar.gz
 sudo mv velero-v1.17.1-linux-amd64/velero /usr/local/bin/
+velero version
+
+# Windows (via Chocolatey)
+choco install velero
 ```
