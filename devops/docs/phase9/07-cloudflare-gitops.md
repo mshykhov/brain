@@ -2,78 +2,63 @@
 
 ## Overview
 
-Миграция с remotely-managed tunnel (Dashboard) на locally-managed tunnel (config.yaml в Git).
+Полностью GitOps-managed Cloudflare Tunnel с автоматическим DNS через External-DNS.
 
-**Преимущества:**
-- Вся конфигурация в Git
-- Infrastructure as Code
-- Нет зависимости от Cloudflare Dashboard
+**Компоненты:**
+- **cloudflared** - locally-managed tunnel с config.yaml
+- **External-DNS** - автоматически создаёт DNS записи на основе Ingress annotations
+- **protected-services** - централизованная конфигурация всех ingress
 
 **Официальная документация:**
 - [Create locally-managed tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/create-local-tunnel/)
-- [Configuration file](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/local-management/configuration-file/)
+- [External-DNS Cloudflare](https://github.com/kubernetes-sigs/external-dns/blob/master/docs/tutorials/cloudflare.md)
 - [Kubernetes example](https://github.com/cloudflare/argo-tunnel-examples/blob/master/named-tunnel-k8s/cloudflared.yaml)
 
 ## Architecture
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│                            Git Repository                              │
-│  ┌─────────────────────┐  ┌─────────────────────┐                     │
-│  │ config.yaml         │  │ Doppler             │                     │
-│  │ - ingress rules     │  │ - CF_TUNNEL_CREDS   │                     │
-│  │ - tunnel UUID       │  │   (credentials.json)│                     │
-│  └─────────────────────┘  └─────────────────────┘                     │
+│                         Git Repository                                 │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │ protected-services/values.yaml                                   │  │
+│  │   services:                                                      │  │
+│  │     example-api-prd:                                            │  │
+│  │       cloudflare: true                                          │  │
+│  │       hostname: api.untrustedonline.org  ←── External-DNS reads │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────────────┘
-                │                        │
-                ▼                        ▼
+                                    │
+                                    ▼
 ┌───────────────────────────────────────────────────────────────────────┐
 │                         Kubernetes Cluster                             │
-│  ┌─────────────────────┐  ┌─────────────────────┐                     │
-│  │ ConfigMap           │  │ Secret              │                     │
-│  │ cloudflared-config  │  │ tunnel-credentials  │ ← ExternalSecret    │
-│  └─────────────────────┘  └─────────────────────┘                     │
-│                │                        │                              │
-│                └────────────┬───────────┘                              │
-│                             ▼                                          │
-│                   ┌─────────────────┐                                  │
-│                   │   cloudflared   │                                  │
-│                   │   Deployment    │                                  │
-│                   └────────┬────────┘                                  │
-│                            │                                           │
-│                            ▼                                           │
-│                   ┌─────────────────┐                                  │
-│                   │  NGINX Ingress  │                                  │
-│                   └────────┬────────┘                                  │
-│                            │                                           │
-│              ┌─────────────┼─────────────┐                            │
-│              ▼             ▼             ▼                            │
-│      ┌───────────┐  ┌───────────┐  ┌───────────┐                     │
-│      │ API Pods  │  │ UI Pods   │  │ Other     │                     │
-│      └───────────┘  └───────────┘  └───────────┘                     │
+│                                                                        │
+│  ┌──────────────┐    watches    ┌──────────────┐    creates DNS       │
+│  │   Ingress    │ ◄──────────── │ External-DNS │ ──────────────────►  │
+│  │ (annotations)│               └──────────────┘      Cloudflare API  │
+│  └──────────────┘                                                      │
+│         │                                                              │
+│         ▼                                                              │
+│  ┌──────────────┐         ┌──────────────┐                            │
+│  │    NGINX     │ ◄────── │  cloudflared │ ◄──── Cloudflare Edge      │
+│  │   Ingress    │         │   (tunnel)   │                            │
+│  └──────────────┘         └──────────────┘                            │
+│         │                                                              │
+│         ▼                                                              │
+│  ┌──────────────┐                                                      │
+│  │  App Pods    │                                                      │
+│  └──────────────┘                                                      │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Step 1: Create Locally-Managed Tunnel
 
-### 1.1 Install cloudflared CLI
+### 1.1 Install cloudflared CLI (Linux)
 
-**macOS:**
-```bash
-brew install cloudflared
-```
-
-**Linux (Debian/Ubuntu):**
 ```bash
 sudo mkdir -p --mode=0755 /usr/share/keyrings
 curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg | sudo tee /usr/share/keyrings/cloudflare-public-v2.gpg >/dev/null
 echo "deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
 sudo apt-get update && sudo apt-get install cloudflared
-```
-
-**Windows:**
-```powershell
-winget install Cloudflare.cloudflared
 ```
 
 ### 1.2 Authenticate
@@ -82,21 +67,15 @@ winget install Cloudflare.cloudflared
 cloudflared tunnel login
 ```
 
-Откроется браузер для авторизации. После успеха появится `~/.cloudflared/cert.pem`.
-
 ### 1.3 Create Tunnel
 
 ```bash
 cloudflared tunnel create k8s-prd-tunnel
 ```
 
-**Output:**
-```
-Tunnel credentials written to /Users/myron/.cloudflared/<TUNNEL_UUID>.json
-Created tunnel k8s-prd-tunnel with id <TUNNEL_UUID>
-```
-
-> **IMPORTANT:** Сохрани credentials.json - он понадобится для Doppler!
+Сохрани:
+- **Tunnel UUID** - нужен для values
+- **credentials.json** - нужен для Doppler
 
 ### 1.4 Get Tunnel UUID
 
@@ -104,235 +83,170 @@ Created tunnel k8s-prd-tunnel with id <TUNNEL_UUID>
 cloudflared tunnel list
 ```
 
-**Output:**
-```
-ID                                   NAME            CREATED
-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx k8s-prd-tunnel  2024-12-04T10:00:00Z
-```
-
-## Step 2: Store Credentials in Doppler
-
-### 2.1 Encode credentials.json
-
-```bash
-cat ~/.cloudflared/<TUNNEL_UUID>.json | base64 -w0
-```
-
-### 2.2 Add to Doppler
+## Step 2: Add Secrets to Doppler
 
 В Doppler Dashboard → `shared` config:
 
-| Key | Value |
-|-----|-------|
-| `CF_TUNNEL_CREDENTIALS` | (base64 encoded credentials.json) |
+| Key | Value | Description |
+|-----|-------|-------------|
+| `CF_TUNNEL_CREDENTIALS` | base64 encoded credentials.json | `cat ~/.cloudflared/<UUID>.json \| base64 -w0` |
+| `CF_API_TOKEN` | API token | Zone:Read, DNS:Edit permissions |
 
-> **Note:** credentials.json содержит AccountTag, TunnelSecret, TunnelID - достаточно для аутентификации.
+### Create Cloudflare API Token
 
-## Step 3: Create DNS Records
+1. Cloudflare Dashboard → My Profile → API Tokens
+2. Create Token → Custom token
+3. Permissions:
+   - Zone: Zone: Read
+   - Zone: DNS: Edit
+4. Zone Resources: All zones
+5. Create Token → Copy
 
-```bash
-# Route hostnames to tunnel
-cloudflared tunnel route dns k8s-prd-tunnel api.untrustedonline.org
-cloudflared tunnel route dns k8s-prd-tunnel untrustedonline.org
-```
+## Step 3: Update ArgoCD Values
 
-Это создаёт CNAME записи в Cloudflare DNS:
-- `api.untrustedonline.org` → `<TUNNEL_UUID>.cfargotunnel.com`
-- `untrustedonline.org` → `<TUNNEL_UUID>.cfargotunnel.com`
+В ArgoCD Application для protected-services добавить tunnelId:
 
-## Step 4: Update Helm Chart
-
-### 4.1 ExternalSecret for Credentials
-
-`charts/credentials/templates/cloudflare.yaml`:
 ```yaml
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: cloudflare-tunnel-credentials
-  namespace: cloudflare
+# apps/templates/services/protected-services.yaml
 spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: doppler-shared
-  target:
-    name: tunnel-credentials
-    creationPolicy: Owner
-    template:
-      data:
-        credentials.json: "{{ .credentials | base64decode }}"
-  data:
-    - secretKey: credentials
-      remoteRef:
-        key: CF_TUNNEL_CREDENTIALS
+  source:
+    helm:
+      valuesObject:
+        cloudflare:
+          tunnelId: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
-### 4.2 ConfigMap with Ingress Rules
+И для cloudflare-tunnel:
 
-`charts/cloudflare-tunnel/templates/configmap.yaml`:
 ```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: cloudflared-config
-  namespace: cloudflare
-data:
-  config.yaml: |
-    tunnel: {{ .Values.tunnel.uuid }}
-    credentials-file: /etc/cloudflared/creds/credentials.json
-    metrics: 0.0.0.0:2000
-    no-autoupdate: true
-
-    ingress:
-      {{- range .Values.ingress }}
-      - hostname: {{ .hostname }}
-        service: {{ .service }}
-      {{- end }}
-      - service: http_status:404
+# apps/templates/network/cloudflare-tunnel.yaml
+spec:
+  source:
+    helm:
+      valuesObject:
+        tunnel:
+          uuid: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
-### 4.3 values.yaml
+## How It Works
+
+1. **Ingress создаётся** с annotations:
+   ```yaml
+   annotations:
+     external-dns.alpha.kubernetes.io/hostname: api.untrustedonline.org
+     external-dns.alpha.kubernetes.io/target: <tunnel-id>.cfargotunnel.com
+     external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
+   ```
+
+2. **External-DNS видит** Ingress и создаёт CNAME в Cloudflare:
+   ```
+   api.untrustedonline.org → <tunnel-id>.cfargotunnel.com
+   ```
+
+3. **Cloudflare Edge** получает запрос и отправляет в tunnel
+
+4. **cloudflared** получает запрос и смотрит config.yaml:
+   ```yaml
+   ingress:
+     - hostname: api.untrustedonline.org
+       service: http://nginx-ingress...
+   ```
+
+5. **NGINX Ingress** роутит по Host header к сервису
+
+## Adding New Domain
+
+Просто добавь в `protected-services/values.yaml`:
 
 ```yaml
-tunnel:
-  uuid: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+services:
+  new-service-prd:
+    enabled: true
+    oauth2: false
+    cloudflare: true
+    hostname: new.untrustedonline.org  # External-DNS создаст DNS
+    namespace: new-service-prd
+    backend:
+      name: new-service-prd
+      port: 8080
+```
 
-replicas: 2
+И добавь в `cloudflare-tunnel/values.yaml`:
 
-image:
-  repository: cloudflare/cloudflared
-  tag: "2024.11.1"
-  pullPolicy: IfNotPresent
-
-resources:
-  requests:
-    cpu: 10m
-    memory: 64Mi
-  limits:
-    cpu: 100m
-    memory: 128Mi
-
-# Ingress rules - all routing config in Git!
+```yaml
 ingress:
-  - hostname: api.untrustedonline.org
-    service: http://nginx-ingress-ingress-nginx-controller.nginx-ingress.svc.cluster.local:80
-  - hostname: untrustedonline.org
+  - hostname: new.untrustedonline.org
     service: http://nginx-ingress-ingress-nginx-controller.nginx-ingress.svc.cluster.local:80
 ```
 
-### 4.4 deployment.yaml
+ArgoCD sync → External-DNS создаст DNS → Готово!
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: cloudflared
-  namespace: cloudflare
-spec:
-  replicas: {{ .Values.replicas }}
-  selector:
-    matchLabels:
-      app: cloudflared
-  template:
-    metadata:
-      labels:
-        app: cloudflared
-    spec:
-      containers:
-        - name: cloudflared
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args:
-            - tunnel
-            - --config
-            - /etc/cloudflared/config/config.yaml
-            - run
-          ports:
-            - name: metrics
-              containerPort: 2000
-          volumeMounts:
-            - name: config
-              mountPath: /etc/cloudflared/config
-              readOnly: true
-            - name: creds
-              mountPath: /etc/cloudflared/creds
-              readOnly: true
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-          livenessProbe:
-            httpGet:
-              path: /ready
-              port: 2000
-            initialDelaySeconds: 10
-            periodSeconds: 10
-      volumes:
-        - name: config
-          configMap:
-            name: cloudflared-config
-        - name: creds
-          secret:
-            secretName: tunnel-credentials
+## Files Structure
+
+```
+example-infrastructure/
+├── apps/templates/network/
+│   ├── cloudflare-tunnel.yaml      # ArgoCD Application
+│   └── external-dns.yaml           # ArgoCD Application
+├── charts/
+│   ├── cloudflare-tunnel/
+│   │   ├── templates/
+│   │   │   ├── configmap.yaml      # config.yaml с ingress rules
+│   │   │   └── deployment.yaml     # cloudflared pods
+│   │   └── values.yaml             # tunnel UUID, ingress rules
+│   ├── credentials/templates/
+│   │   └── cloudflare.yaml         # ExternalSecrets для tunnel + DNS
+│   └── protected-services/
+│       ├── templates/
+│       │   └── ingresses.yaml      # Ingress с external-dns annotations
+│       └── values.yaml             # Services config
+└── helm-values/network/
+    └── external-dns.yaml           # External-DNS helm values
 ```
 
-## Step 5: Delete Old Tunnel (Optional)
+## Doppler Secrets
 
-После успешной миграции можно удалить старый remotely-managed tunnel:
-
-1. Cloudflare Dashboard → Zero Trust → Networks → Tunnels
-2. Выбрать старый tunnel
-3. Delete tunnel
-
-> **Note:** Сначала убедись что новый tunnel работает!
-
-## Step 6: Cleanup Doppler
-
-Удалить старый `CF_TUNNEL_TOKEN` из Doppler `shared` config (больше не нужен).
+| Key | Config | Description |
+|-----|--------|-------------|
+| `CF_TUNNEL_CREDENTIALS` | shared | Base64 credentials.json |
+| `CF_API_TOKEN` | shared | Cloudflare API token |
 
 ## Verification
 
 ```bash
-# Check pods running
-kubectl get pods -n cloudflare
+# Check External-DNS logs
+kubectl logs -n external-dns -l app.kubernetes.io/name=external-dns -f
+
+# Check DNS record created
+dig api.untrustedonline.org
 
 # Check tunnel connected
 kubectl logs -n cloudflare -l app=cloudflared | grep "Connection"
 
-# Expect: "Connection registered"
-
-# Test endpoints
+# Test endpoint
 curl https://api.untrustedonline.org/actuator/health
-curl https://untrustedonline.org
 ```
 
 ## Troubleshooting
 
-### Error: "credentials file not found"
+### DNS not created
 
 ```bash
-# Check secret mounted
+# Check External-DNS sees the Ingress
+kubectl logs -n external-dns -l app.kubernetes.io/name=external-dns | grep "api.untrustedonline"
+
+# Check Ingress has correct annotations
+kubectl get ingress -n example-api-prd example-api-prd -o yaml
+```
+
+### Tunnel not connecting
+
+```bash
+# Check credentials mounted
 kubectl exec -n cloudflare -it deployment/cloudflared -- ls -la /etc/cloudflared/creds/
 
-# Check secret content
-kubectl get secret -n cloudflare tunnel-credentials -o jsonpath='{.data.credentials\.json}' | base64 -d
-```
-
-### Error: "failed to parse config"
-
-```bash
-# Check configmap
+# Check config
 kubectl get configmap -n cloudflare cloudflared-config -o yaml
-
-# Validate YAML syntax
-```
-
-### Error: "tunnel not found"
-
-```bash
-# Verify tunnel exists
-cloudflared tunnel list
-
-# Verify tunnel UUID in values.yaml matches
 ```
 
 ## Migration Checklist
@@ -340,13 +254,14 @@ cloudflared tunnel list
 - [ ] Install cloudflared CLI
 - [ ] Run `cloudflared tunnel login`
 - [ ] Create tunnel: `cloudflared tunnel create k8s-prd-tunnel`
-- [ ] Save credentials.json
-- [ ] Add base64-encoded credentials to Doppler (CF_TUNNEL_CREDENTIALS)
-- [ ] Create DNS routes: `cloudflared tunnel route dns ...`
-- [ ] Update Helm chart with new templates
-- [ ] Update values.yaml with tunnel UUID and ingress rules
-- [ ] Commit and push to Git
+- [ ] Add `CF_TUNNEL_CREDENTIALS` to Doppler (base64 encoded)
+- [ ] Create Cloudflare API token (Zone:Read, DNS:Edit)
+- [ ] Add `CF_API_TOKEN` to Doppler
+- [ ] Update ArgoCD valuesObject with tunnel UUID
+- [ ] Commit and push
 - [ ] Wait for ArgoCD sync
-- [ ] Verify tunnel working
+- [ ] Verify DNS created by External-DNS
+- [ ] Verify tunnel connected
+- [ ] Test endpoints
 - [ ] Delete old remotely-managed tunnel from Dashboard
-- [ ] Remove old CF_TUNNEL_TOKEN from Doppler
+- [ ] Remove old `CF_TUNNEL_TOKEN` from Doppler
