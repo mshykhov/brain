@@ -138,7 +138,52 @@ kubectl get configmap -n cloudflare cloudflared-config -o yaml
 
 # External-DNS
 kubectl logs -n external-dns -l app.kubernetes.io/name=external-dns | grep -i error
+
+# Check cloudflared connectivity
+kubectl logs -n cloudflare -l app=cloudflared | grep -E "(error|ERR)"
 ```
+
+### Common Errors
+
+#### Error 502 Bad Gateway
+
+**Symptom:** Site returns 502, cloudflared logs show:
+```
+Unable to reach the origin service... no such host
+```
+
+**Cause:** Wrong namespace in cloudflared config.
+
+**Fix:** Check service name matches actual nginx-ingress service:
+```bash
+# Find correct service
+kubectl get svc -A | grep nginx
+
+# Verify configmap
+kubectl get configmap -n cloudflare cloudflared-config -o jsonpath='{.data.config\.yaml}'
+```
+
+Service должен быть: `nginx-ingress-ingress-nginx-controller.ingress-nginx.svc.cluster.local`
+(namespace = `ingress-nginx`, НЕ `nginx-ingress`)
+
+#### Error 1033 Cloudflare Tunnel error
+
+**Symptom:** DNS points to old/wrong tunnel UUID.
+
+**Cause:** Manual DNS records pointing to old tunnel.
+
+**Fix:** Delete old CNAME records in Cloudflare Dashboard, External-DNS recreates with correct UUID.
+
+#### "owner id does not match"
+
+**Symptom:** External-DNS logs show:
+```
+Skipping endpoint ... because owner id does not match, found: "", required: "external-dns"
+```
+
+**Cause:** DNS records created manually have no ownership TXT record.
+
+**Fix:** Delete manual records in Cloudflare Dashboard.
 
 ## External-DNS Configuration
 
