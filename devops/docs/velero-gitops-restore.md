@@ -33,10 +33,9 @@ velero backup create --from-schedule <name>
 # Set variables
 NS=<namespace>
 BACKUP=<backup-name>
-APP=$NS  # ArgoCD app name (usually same as namespace)
 
-# 1. Disable ArgoCD auto-sync
-kubectl patch application $APP -n argocd --type=merge \
+# 1. Disable ArgoCD auto-sync (root app to prevent recreation)
+kubectl patch application root -n argocd --type=merge \
   -p '{"spec":{"syncPolicy":{"automated":null}}}'
 
 # 2. Delete namespace
@@ -51,7 +50,7 @@ kubectl get cluster -n $NS -o name | xargs -I {} \
   -p '{"status":{"phase":"Setting up primary","phaseReason":""}}'
 
 # 5. Re-enable ArgoCD auto-sync
-kubectl patch application $APP -n argocd --type=merge \
+kubectl patch application root -n argocd --type=merge \
   -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
 
 # 6. Verify
