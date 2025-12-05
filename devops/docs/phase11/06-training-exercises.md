@@ -2,15 +2,6 @@
 
 Практические упражнения для тренировки backup/restore операций.
 
-## Namespaces Overview
-
-| Label | Namespaces |
-|-------|------------|
-| `env=dev` | example-api-dev, example-ui-dev |
-| `env=prd` | example-api-prd, example-ui-prd |
-| `tier=application` | All above |
-| `tier=monitoring` | monitoring |
-
 ## Prerequisites: Install Velero CLI
 
 ### Option 1: Homebrew (recommended)
@@ -37,28 +28,7 @@ velero backup-location get
 
 ---
 
-## Exercise 1: Backup All DEV by Label
-
-**Goal**: Backup all dev environments at once using label selector
-
-```bash
-# 1. Check namespaces with env=dev label
-kubectl get ns -l env=dev
-
-# 2. Backup all DEV by label
-velero backup create dev-backup-$(date +%Y%m%d-%H%M) \
-  --selector env=dev \
-  --default-volumes-to-fs-backup \
-  --wait
-
-# 3. Verify backup
-velero backup get
-velero backup describe dev-backup-YYYYMMDD-HHMM --details
-```
-
----
-
-## Exercise 2: Basic Namespace Backup & Restore
+## Exercise 1: Basic Namespace Backup & Restore
 
 **Goal**: Backup single namespace, delete something, restore
 
@@ -92,7 +62,7 @@ velero restore describe <restore-name>
 
 ---
 
-## Exercise 3: PostgreSQL Data Recovery
+## Exercise 2: PostgreSQL Data Recovery
 
 **Goal**: Restore database after data deletion
 
@@ -136,7 +106,7 @@ kubectl exec -it example-api-main-db-dev-cluster-1 -n example-api-dev \
 
 ---
 
-## Exercise 4: Selective Restore (ConfigMaps only)
+## Exercise 3: Selective Restore (ConfigMaps only)
 
 **Goal**: Restore only specific resources
 
@@ -163,7 +133,7 @@ kubectl get configmap <configmap-name> -n monitoring
 
 ---
 
-## Exercise 5: Full Namespace Disaster Recovery
+## Exercise 4: Full Namespace Disaster Recovery
 
 **Goal**: Recover entire deleted namespace
 
@@ -196,7 +166,7 @@ kubectl get application -n argocd | grep monitoring
 
 ---
 
-## Exercise 6: Cross-Namespace Clone
+## Exercise 5: Cross-Namespace Clone
 
 **Goal**: Clone prd to staging for testing
 
@@ -220,7 +190,7 @@ kubectl delete namespace example-api-staging
 
 ---
 
-## Exercise 7: Scheduled Backup Verification
+## Exercise 6: Scheduled Backup Verification
 
 **Goal**: Verify automated backups work
 
@@ -278,9 +248,6 @@ metadata:
 spec:
   includedNamespaces:
     - example-api-dev
-  orLabelSelectors:
-    - matchLabels:
-        env: dev
   defaultVolumesToFsBackup: true
   ttl: 168h0m0s
 ```
@@ -314,5 +281,4 @@ kubectl get restores -n velero -w
 - [ ] BackupStorageLocation is Available
 - [ ] Test restore of namespace without PVCs
 - [ ] Test restore of namespace with PVCs
-- [ ] Test label-based backup/restore
 - [ ] Document RTO/RPO
