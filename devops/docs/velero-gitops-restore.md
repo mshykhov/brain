@@ -34,9 +34,12 @@ velero backup create --from-schedule <name>
 NS=<namespace>
 BACKUP=<backup-name>
 
-# 1. Disable ArgoCD auto-sync (root app to prevent recreation)
-kubectl patch application root -n argocd --type=merge \
-  -p '{"spec":{"syncPolicy":{"automated":null}}}'
+# 1. Disable ArgoCD auto-sync (all apps that deploy to this namespace)
+for app in root $(kubectl get application -n argocd -o json | \
+  jq -r ".items[] | select(.spec.destination.namespace==\"$NS\") | .metadata.name"); do
+  kubectl patch application $app -n argocd --type=merge \
+    -p '{"spec":{"syncPolicy":{"automated":null}}}'
+done
 
 # 2. Delete namespace
 kubectl delete namespace $NS --wait=true
@@ -50,8 +53,11 @@ kubectl get cluster -n $NS -o name | xargs -I {} \
   -p '{"status":{"phase":"Setting up primary","phaseReason":""}}'
 
 # 5. Re-enable ArgoCD auto-sync
-kubectl patch application root -n argocd --type=merge \
-  -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+for app in root $(kubectl get application -n argocd -o json | \
+  jq -r ".items[] | select(.spec.destination.namespace==\"$NS\") | .metadata.name"); do
+  kubectl patch application $app -n argocd --type=merge \
+    -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+done
 
 # 6. Verify
 kubectl get pods -n $NS
