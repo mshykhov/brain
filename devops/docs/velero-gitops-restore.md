@@ -32,6 +32,9 @@ velero backup create --from-schedule <name>
 **Рекомендуемый процесс:**
 
 ```bash
+# Find app name (usually same as namespace)
+kubectl get applications -n argocd
+
 # 1. Disable ArgoCD selfHeal
 kubectl patch application <app-name> -n argocd --type=merge \
   -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":false}}}}'
@@ -54,8 +57,7 @@ kubectl patch application <app-name> -n argocd --type=merge \
   -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true}}}}'
 ```
 
-<details>
-<summary>Альтернатива: Удаление ArgoCD Application</summary>
+### Альтернатива: Удаление ArgoCD Application
 
 ```bash
 # 1. Delete ArgoCD Application (stops sync)
@@ -69,8 +71,6 @@ velero restore create --from-backup <backup-name> --wait
 
 # 4. Root app recreates Application automatically
 ```
-
-</details>
 
 ---
 
