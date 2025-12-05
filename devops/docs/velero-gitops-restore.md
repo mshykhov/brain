@@ -29,57 +29,18 @@ velero backup create --from-schedule <name>
 
 ## Restore Single Namespace
 
-**Рекомендуемый процесс:**
-
 ```bash
-NS=monitoring  # target namespace
-
-# Helper function: get ArgoCD apps by destination namespace
-get_apps() {
-  kubectl get applications -n argocd -o json | \
-    python3 -c "import sys,json; apps=json.load(sys.stdin)['items']; print('\n'.join([a['metadata']['name'] for a in apps if a['spec']['destination'].get('namespace')=='$1']))"
-}
-
-# 1. List apps deploying to namespace
-get_apps $NS
-
-# 2. Disable ArgoCD automated sync
-for app in $(get_apps $NS); do
-  argocd app set $app --sync-policy none
-done
-
-# 3. Scale down workloads
-kubectl scale deployment --all -n $NS --replicas=0
-kubectl scale statefulset --all -n $NS --replicas=0
-
-# 4. Delete PVCs
-kubectl delete pvc --all -n $NS
-
-# 5. Restore
-velero restore create --from-backup <backup-name> --wait
-
-# 6. Wait for pods
-kubectl get pods -n $NS -w
-
-# 7. Enable ArgoCD automated sync with self-heal
-for app in $(get_apps $NS); do
-  argocd app set $app --sync-policy automated --self-heal
-done
-```
-
-### Альтернатива: Удаление ArgoCD Application
-
-```bash
-# 1. Delete ArgoCD Application (stops sync)
-kubectl delete application <app-name> -n argocd
-
-# 2. Delete namespace
+# 1. Delete namespace
 kubectl delete namespace <namespace>
 
-# 3. Restore
-velero restore create --from-backup <backup-name> --wait
+# 2. Restore
+velero restore create --from-backup <backup-name> --include-namespaces <namespace> --wait
 
-# 4. Root app recreates Application automatically
+# 3. Verify
+kubectl get pods -n <namespace>
+kubectl get pvc -n <namespace>
+
+# ArgoCD automatically recreates Applications and syncs resources
 ```
 
 ---
