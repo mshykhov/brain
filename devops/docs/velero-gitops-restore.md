@@ -30,23 +30,25 @@ velero backup create --from-schedule <name>
 ## Restore Single Namespace
 
 ```bash
+# Set variables
+NS=<namespace>
+BACKUP=<backup-name>
+
 # 1. Delete namespace
-kubectl delete namespace <namespace>
+kubectl delete namespace $NS
 
 # 2. Restore
-velero restore create --from-backup <backup-name> --include-namespaces <namespace> --wait
+velero restore create --from-backup $BACKUP --include-namespaces $NS --wait
 
 # 3. Fix CNPG cluster status (if namespace has PostgreSQL)
-kubectl get cluster -n <namespace> -o name | xargs -I {} \
-  kubectl patch {} -n <namespace> --type=merge --subresource=status \
+kubectl get cluster -n $NS -o name | xargs -I {} \
+  kubectl patch {} -n $NS --type=merge --subresource=status \
   -p '{"status":{"phase":"Setting up primary","phaseReason":""}}'
 
 # 4. Verify
-kubectl get pods -n <namespace>
-kubectl get pvc -n <namespace>
-kubectl get cluster -n <namespace>
-
-# ArgoCD automatically recreates Applications and syncs resources
+kubectl get pods -n $NS
+kubectl get pvc -n $NS
+kubectl get cluster -n $NS
 ```
 
 ---
