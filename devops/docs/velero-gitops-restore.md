@@ -53,11 +53,13 @@ kubectl get cluster -n <namespace>
 
 ## CNPG Cluster Handling
 
-CNPG Cluster **исключён из backups** (`excludedNamespaceScopedResources`).
+**Velero официально не поддерживается CNPG** ([issue #5912](https://github.com/cloudnative-pg/cloudnative-pg/issues/5912)).
 
-После restore ArgoCD создаёт новый Cluster, но он видит существующий PVC и переходит в "unrecoverable" состояние. Решение - patch status (шаг 3 выше).
-
-См: https://github.com/cloudnative-pg/cloudnative-pg/issues/5912
+Workaround:
+1. CNPG Cluster **исключён из backups** (`excludedNamespaceScopedResources`)
+2. После restore ArgoCD создаёт новый Cluster
+3. Cluster видит существующий PVC → "unrecoverable" состояние
+4. **Решение**: patch status (шаг 3 выше) - сбрасывает состояние и позволяет adopt PVC
 
 ---
 
