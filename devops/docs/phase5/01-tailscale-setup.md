@@ -18,6 +18,7 @@ Complete [00-prerequisites.md](00-prerequisites.md) first!
 | Component | Namespace | Purpose |
 |-----------|-----------|---------|
 | Operator Deployment | `tailscale` | Main controller |
+| ProxyGroup | `tailscale` | HA ingress proxies (ts-ingress-0, ts-ingress-1) |
 | IngressClass `tailscale` | cluster-wide | For Tailscale Ingress resources |
 | CRDs | cluster-wide | ProxyGroup, Connector, etc. |
 | API Server Proxy | in-process | kubectl via Tailscale |
@@ -59,6 +60,57 @@ Creates secret `tailscale-oauth` in `tailscale` namespace with:
 - `TS_OAUTH_CLIENT_ID`
 - `TS_OAUTH_CLIENT_SECRET`
 
+## ProxyGroup (High Availability)
+
+Docs: https://tailscale.com/kb/1439/kubernetes-operator-cluster-ingress#high-availability
+
+ProxyGroup позволяет:
+- Один набор прокси для всех Ingress (вместо отдельного StatefulSet на каждый)
+- Избежать race conditions ("optimistic lock errors")
+- HA — если один pod упадёт, второй продолжит работать
+
+### Manifest
+
+`charts/protected-services/templates/tailscale-proxygroup.yaml`:
+
+```yaml
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyGroup
+metadata:
+  name: ingress-proxies
+  namespace: tailscale
+spec:
+  type: ingress
+  replicas: 2  # 1 для dev, 2 для prod
+  hostnamePrefix: ts-ingress
+  tags:
+    - tag:k8s
+```
+
+### ACL autoApprovers
+
+Для автоматического одобрения Tailscale Services добавь в ACL:
+
+```json
+"autoApprovers": {
+  "services": {
+    "tag:k8s": ["tag:k8s"]
+  }
+}
+```
+
+## Tailscale Services
+
+**Где смотреть URL сервисов:**
+
+1. **Tailscale Admin Console:** https://login.tailscale.com/admin/services
+2. **kubectl:** `kubectl get ingress -n ingress-nginx` (колонка ADDRESS)
+
+Статусы в консоли:
+- **Connected** — хост активно рекламирует сервис
+- **Offline** — никто не рекламирует
+- **Pending approval** — ждёт одобрения (проверь autoApprovers)
+
 ## Verification
 
 After sync:
@@ -67,11 +119,18 @@ After sync:
 # Check operator pod
 kubectl get pods -n tailscale
 
+# Check ProxyGroup status
+kubectl get proxygroup -n tailscale
+
 # Check operator logs
 kubectl logs -n tailscale -l app.kubernetes.io/name=tailscale-operator
 
 # Check Tailscale Admin Console → Machines
 # Look for "tailscale-operator" with tag:k8s-operator
+# Look for "ts-ingress-0", "ts-ingress-1" (ProxyGroup pods)
+
+# Check Tailscale Admin Console → Services
+# All ingress URLs will be listed there
 ```
 
 ## Configure kubectl Access

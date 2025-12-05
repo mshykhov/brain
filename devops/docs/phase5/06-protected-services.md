@@ -71,13 +71,15 @@ services:
 
 ```yaml
 {{- range $name, $service := .Values.services }}
-{{- if $service.enabled }}
+{{- if and $service.enabled (not $service.hostname) }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ $name }}-tailscale
   namespace: ingress-nginx
+  annotations:
+    tailscale.com/proxy-group: ingress-proxies
 spec:
   ingressClassName: tailscale
   tls:
@@ -99,8 +101,29 @@ spec:
 
 **Как это работает:**
 1. `ingressClassName: tailscale` — Tailscale Operator создаёт proxy
-2. `tls.hosts: [argocd]` — hostname в tailnet (`argocd.tail876052.ts.net`)
-3. Backend → NGINX Ingress Controller
+2. `tailscale.com/proxy-group: ingress-proxies` — использует общий ProxyGroup (HA)
+3. `tls.hosts: [argocd]` — hostname в tailnet (`argocd.tail876052.ts.net`)
+4. Backend → NGINX Ingress Controller
+
+### ProxyGroup
+
+`templates/tailscale-proxygroup.yaml`:
+
+```yaml
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyGroup
+metadata:
+  name: ingress-proxies
+  namespace: tailscale
+spec:
+  type: ingress
+  replicas: 2
+  hostnamePrefix: ts-ingress
+  tags:
+    - tag:k8s
+```
+
+Все Ingress используют один ProxyGroup вместо отдельных StatefulSet.
 
 ### NGINX Ingresses
 
@@ -250,7 +273,29 @@ https://grafana.<tailnet>.ts.net
 5. Auth0 clears Auth0 session
 6. Redirect back to original host
 
+## Где смотреть URL сервисов
+
+1. **Tailscale Console:** https://login.tailscale.com/admin/services
+2. **kubectl:** `kubectl get ingress -n ingress-nginx` (колонка ADDRESS)
+
 ## Troubleshooting
+
+### ProxyGroup не готов
+
+```bash
+# Check ProxyGroup status
+kubectl get proxygroup -n tailscale
+
+# Check ProxyGroup pods
+kubectl get pods -n tailscale -l tailscale.com/proxy-group=ingress-proxies
+
+# Check operator logs
+kubectl logs -n tailscale -l app.kubernetes.io/name=tailscale-operator --tail=100
+```
+
+### "optimistic lock error" в логах
+
+Это нормально — transient ошибки при параллельных обновлениях. Оператор автоматически retry. Если ошибки постоянные — проверь что ProxyGroup настроен правильно.
 
 ### Tailscale proxy не создаётся
 
@@ -258,8 +303,23 @@ https://grafana.<tailnet>.ts.net
 # Check Tailscale Operator
 kubectl get pods -n tailscale
 
+# Check ProxyGroup
+kubectl get proxygroup -n tailscale
+
 # Check Tailscale Ingress
-kubectl get ingress -n ingress-nginx -l ingressClassName=tailscale
+kubectl get ingress -n ingress-nginx
+```
+
+### Сервис "Pending approval" в консоли
+
+Добавь autoApprovers в ACL:
+
+```json
+"autoApprovers": {
+  "services": {
+    "tag:k8s": ["tag:k8s"]
+  }
+}
 ```
 
 ### 502 от NGINX
