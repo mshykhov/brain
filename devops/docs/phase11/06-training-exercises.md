@@ -2,281 +2,317 @@
 
 Практические упражнения для тренировки backup/restore операций.
 
+## Namespaces Overview
+
+| Label | Namespaces |
+|-------|------------|
+| `env=dev` | example-api-dev, example-ui-dev |
+| `env=prd` | example-api-prd, example-ui-prd |
+| `tier=application` | All above |
+| `tier=monitoring` | monitoring |
+
 ## Prerequisites: Install Velero CLI
 
-Velero CLI использует тот же kubeconfig что и kubectl.
-
-### Option 1: Homebrew (recommended for WSL/Linux/macOS)
+### Option 1: Homebrew (recommended)
 
 ```bash
-# Install Homebrew first (if not installed)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Add Homebrew to PATH (add to ~/.bashrc or ~/.zshrc)
-echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc
-source ~/.bashrc
-
-# Install Velero
 brew install velero
 ```
 
-### Option 2: Manual Download (Linux)
+### Option 2: Manual Download
 
 ```bash
-# Auto-download latest version
 VERSION=$(curl -s https://api.github.com/repos/vmware-tanzu/velero/releases/latest | grep tag_name | cut -d '"' -f 4)
 wget https://github.com/vmware-tanzu/velero/releases/download/${VERSION}/velero-${VERSION}-linux-amd64.tar.gz
 tar -xvf velero-${VERSION}-linux-amd64.tar.gz
 sudo mv velero-${VERSION}-linux-amd64/velero /usr/local/bin/
-velero version
 ```
 
-### Option 3: Windows
-
-```powershell
-# Chocolatey
-choco install velero
-
-# Or Scoop
-scoop install velero
-```
-
-### Verify Installation
+### Verify
 
 ```bash
 velero version
-# Should show Client and Server versions
-```
-
----
-
-## Exercise 1: Basic Backup & Restore (Dev Environment)
-
-### Goal
-Создать бэкап dev namespaces, удалить данные, восстановить.
-
-### Namespace Structure
-```
-example-api-dev    - API (app + redis cache + postgres db)
-example-ui-dev     - UI frontend
-```
-
-### Steps
-
-```bash
-# 1. Проверить текущее состояние
-kubectl get pods -n example-api-dev
-kubectl get pods -n example-ui-dev
-kubectl get pvc -n example-api-dev
-
-# 2. Создать бэкап
-velero backup create dev-training-backup \
-  --include-namespaces=example-api-dev,example-ui-dev \
-  --wait
-
-# 3. Проверить бэкап
-velero backup describe dev-training-backup --details
-velero backup logs dev-training-backup
-
-# 4. Симулировать disaster - удалить namespace (ОСТОРОЖНО!)
-kubectl delete namespace example-api-dev
-
-# 5. Восстановить
-velero restore create dev-restore \
-  --from-backup dev-training-backup \
-  --wait
-
-# 6. Проверить восстановление
-kubectl get pods -n example-api-dev
-kubectl get pvc -n example-api-dev
-velero restore describe dev-restore
-```
-
----
-
-## Exercise 2: Selective Restore
-
-### Goal
-Восстановить только определённые ресурсы.
-
-### Steps
-
-```bash
-# 1. Создать полный бэкап
-velero backup create full-selective-test \
-  --include-namespaces=dev,monitoring \
-  --wait
-
-# 2. Восстановить только deployments и services
-velero restore create selective-restore \
-  --from-backup full-selective-test \
-  --include-resources deployments,services \
-  --include-namespaces dev
-
-# 3. Восстановить по label
-velero restore create label-restore \
-  --from-backup full-selective-test \
-  --selector app=example-api
-
-# 4. Проверить что восстановилось
-velero restore describe selective-restore --details
-```
-
----
-
-## Exercise 3: Database Backup with Pre-Hooks
-
-### Goal
-Бэкап PostgreSQL с использованием pre-backup hooks для consistency.
-
-### Important
-CloudNativePG уже делает continuous WAL archiving. Velero бэкапит PVC.
-
-### Steps
-
-```bash
-# 1. Проверить PG кластер
-kubectl get clusters -n dev
-kubectl get pods -n dev -l cnpg.io/cluster=example-api-main-db-dev-cluster
-
-# 2. Создать бэкап с включением PVC
-velero backup create db-backup-test \
-  --include-namespaces=dev \
-  --default-volumes-to-fs-backup=true \
-  --wait
-
-# 3. Проверить что volumes включены
-velero backup describe db-backup-test --details | grep -A20 "Volumes"
-```
-
----
-
-## Exercise 4: Cross-Namespace Restore
-
-### Goal
-Восстановить в другой namespace для тестирования.
-
-### Steps
-
-```bash
-# 1. Создать бэкап prod
-velero backup create prod-clone-backup \
-  --include-namespaces=prd \
-  --wait
-
-# 2. Восстановить как staging
-velero restore create prod-to-staging \
-  --from-backup prod-clone-backup \
-  --namespace-mappings prd:staging-test
-
-# 3. Проверить
-kubectl get pods -n staging-test
-
-# 4. Cleanup
-kubectl delete namespace staging-test
-```
-
----
-
-## Exercise 5: Scheduled Backup Verification
-
-### Goal
-Проверить что scheduled backups работают.
-
-### Steps
-
-```bash
-# 1. Посмотреть schedules
-velero schedule get
-
-# 2. Проверить последние бэкапы от schedule
-velero backup get | grep velero-daily
-velero backup get | grep velero-weekly
-
-# 3. Запустить schedule вручную
-velero backup create --from-schedule velero-daily-critical
-
-# 4. Проверить BackupStorageLocation
 velero backup-location get
 ```
 
 ---
 
-## Exercise 6: Disaster Recovery Simulation
+## Exercise 1: Backup All DEV by Label
 
-### Goal
-Полная симуляция восстановления критических сервисов.
-
-### Scenario
-Потеряли monitoring namespace.
-
-### Steps
+**Goal**: Backup all dev environments at once using label selector
 
 ```bash
-# 1. Создать свежий бэкап
-velero backup create dr-test-backup \
-  --include-namespaces=monitoring \
+# 1. Check namespaces with env=dev label
+kubectl get ns -l env=dev
+
+# 2. Backup all DEV by label
+velero backup create dev-backup-$(date +%Y%m%d-%H%M) \
+  --selector env=dev \
+  --default-volumes-to-fs-backup \
   --wait
 
-# 2. Записать текущее состояние
-kubectl get pods -n monitoring > /tmp/before-dr.txt
-
-# 3. Удалить namespace (ОСТОРОЖНО!)
-kubectl delete namespace monitoring --wait=false
-kubectl delete namespace monitoring --force --grace-period=0
-
-# 4. Дождаться удаления
-kubectl get namespace monitoring
-
-# 5. Восстановить
-velero restore create dr-restore \
-  --from-backup dr-test-backup \
-  --wait
-
-# 6. Сравнить
-kubectl get pods -n monitoring > /tmp/after-dr.txt
-diff /tmp/before-dr.txt /tmp/after-dr.txt
-
-# 7. Проверить ArgoCD sync
-kubectl get applications -n argocd | grep monitoring
+# 3. Verify backup
+velero backup get
+velero backup describe dev-backup-YYYYMMDD-HHMM --details
 ```
 
 ---
 
-## Useful Commands Reference
+## Exercise 2: Basic Namespace Backup & Restore
+
+**Goal**: Backup single namespace, delete something, restore
+
+```bash
+# 1. Check current state
+kubectl get pods -n example-api-dev
+kubectl get pvc -n example-api-dev
+
+# 2. Create backup
+velero backup create example-api-dev-backup \
+  --include-namespaces example-api-dev \
+  --default-volumes-to-fs-backup \
+  --wait
+
+# 3. Verify backup
+velero backup describe example-api-dev-backup --details
+
+# 4. Simulate disaster - delete deployment
+kubectl delete deployment example-api-dev -n example-api-dev
+
+# 5. Verify it's gone
+kubectl get pods -n example-api-dev
+
+# 6. Restore
+velero restore create --from-backup example-api-dev-backup --wait
+
+# 7. Verify restored
+kubectl get pods -n example-api-dev
+velero restore describe <restore-name>
+```
+
+---
+
+## Exercise 3: PostgreSQL Data Recovery
+
+**Goal**: Restore database after data deletion
+
+```bash
+# 1. Check PostgreSQL pod name
+kubectl get pods -n example-api-dev -l cnpg.io/cluster
+
+# 2. Check current data (adjust table name)
+kubectl exec -it example-api-main-db-dev-cluster-1 -n example-api-dev \
+  -- psql -U app -d app -c "SELECT COUNT(*) FROM your_table;"
+
+# 3. Create backup with volumes
+velero backup create db-backup-$(date +%Y%m%d-%H%M) \
+  --include-namespaces example-api-dev \
+  --default-volumes-to-fs-backup \
+  --wait
+
+# 4. Simulate data loss
+kubectl exec -it example-api-main-db-dev-cluster-1 -n example-api-dev \
+  -- psql -U app -d app -c "DELETE FROM your_table;"
+
+# 5. Scale down app to release DB connections
+kubectl scale deployment example-api-dev -n example-api-dev --replicas=0
+
+# 6. Delete PVCs to allow restore
+kubectl delete pvc -n example-api-dev -l cnpg.io/cluster
+
+# 7. Restore
+velero restore create --from-backup db-backup-YYYYMMDD-HHMM --wait
+
+# 8. Wait for PostgreSQL to start
+kubectl get pods -n example-api-dev -w
+
+# 9. Scale app back
+kubectl scale deployment example-api-dev -n example-api-dev --replicas=1
+
+# 10. Verify data restored
+kubectl exec -it example-api-main-db-dev-cluster-1 -n example-api-dev \
+  -- psql -U app -d app -c "SELECT COUNT(*) FROM your_table;"
+```
+
+---
+
+## Exercise 4: Selective Restore (ConfigMaps only)
+
+**Goal**: Restore only specific resources
+
+```bash
+# 1. Backup monitoring
+velero backup create monitoring-backup \
+  --include-namespaces monitoring \
+  --wait
+
+# 2. List ConfigMaps
+kubectl get configmap -n monitoring
+
+# 3. Delete specific ConfigMap
+kubectl delete configmap <configmap-name> -n monitoring
+
+# 4. Restore ONLY ConfigMaps
+velero restore create --from-backup monitoring-backup \
+  --include-resources configmaps \
+  --wait
+
+# 5. Verify ConfigMap is back
+kubectl get configmap <configmap-name> -n monitoring
+```
+
+---
+
+## Exercise 5: Full Namespace Disaster Recovery
+
+**Goal**: Recover entire deleted namespace
+
+```bash
+# 1. Backup monitoring namespace
+velero backup create monitoring-full-backup \
+  --include-namespaces monitoring \
+  --default-volumes-to-fs-backup \
+  --wait
+
+# 2. Record current state
+kubectl get pods -n monitoring > /tmp/before.txt
+
+# 3. DELETE NAMESPACE (CAREFUL!)
+kubectl delete namespace monitoring
+
+# 4. Wait for deletion
+kubectl get namespace monitoring
+
+# 5. Restore
+velero restore create --from-backup monitoring-full-backup --wait
+
+# 6. Compare state
+kubectl get pods -n monitoring > /tmp/after.txt
+diff /tmp/before.txt /tmp/after.txt
+
+# 7. Wait for ArgoCD to reconcile
+kubectl get application -n argocd | grep monitoring
+```
+
+---
+
+## Exercise 6: Cross-Namespace Clone
+
+**Goal**: Clone prd to staging for testing
+
+```bash
+# 1. Backup prd
+velero backup create prd-clone-backup \
+  --include-namespaces example-api-prd \
+  --wait
+
+# 2. Restore to new namespace
+velero restore create prd-to-staging \
+  --from-backup prd-clone-backup \
+  --namespace-mappings example-api-prd:example-api-staging
+
+# 3. Verify
+kubectl get pods -n example-api-staging
+
+# 4. Cleanup when done
+kubectl delete namespace example-api-staging
+```
+
+---
+
+## Exercise 7: Scheduled Backup Verification
+
+**Goal**: Verify automated backups work
+
+```bash
+# 1. List schedules
+velero schedule get
+
+# 2. Check recent backups from schedule
+velero backup get --selector velero.io/schedule-name=<schedule-name>
+
+# 3. Manually trigger schedule
+velero backup create --from-schedule <schedule-name>
+
+# 4. Verify storage location
+velero backup-location get
+```
+
+---
+
+## Useful Commands
 
 ```bash
 # Backups
-velero backup get                              # List all backups
-velero backup describe <name> --details        # Detailed info
-velero backup logs <name>                      # Backup logs
-velero backup delete <name>                    # Delete backup
+velero backup get
+velero backup describe <name> --details
+velero backup logs <name>
+velero backup delete <name>
 
 # Restores
-velero restore get                             # List all restores
-velero restore describe <name>                 # Detailed info
-velero restore logs <name>                     # Restore logs
+velero restore get
+velero restore describe <name>
+velero restore logs <name>
 
 # Schedules
-velero schedule get                            # List schedules
-velero schedule describe <name>                # Schedule details
-velero backup create --from-schedule <name>    # Trigger manually
-
-# Storage
-velero backup-location get                     # Check storage status
+velero schedule get
+velero backup create --from-schedule <name>
 
 # Troubleshooting
-kubectl logs -n velero deployment/velero       # Velero server logs
-kubectl logs -n velero daemonset/node-agent    # Node agent logs
+kubectl logs -n velero deployment/velero
+kubectl logs -n velero -l name=node-agent
 ```
 
 ---
 
-## Checklist Before Production DR
+## kubectl Alternatives (no velero CLI)
 
-- [ ] Verify BackupStorageLocation is Available
-- [ ] Test restore of small namespace works
-- [ ] Test restore of namespace with PVCs works
-- [ ] Document RTO (Recovery Time Objective)
-- [ ] Document RPO (Recovery Point Objective)
-- [ ] Test restore in new cluster (if possible)
+### Create Backup
+
+```yaml
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  name: my-backup
+  namespace: velero
+spec:
+  includedNamespaces:
+    - example-api-dev
+  orLabelSelectors:
+    - matchLabels:
+        env: dev
+  defaultVolumesToFsBackup: true
+  ttl: 168h0m0s
+```
+
+```bash
+kubectl apply -f backup.yaml
+kubectl get backups -n velero -w
+```
+
+### Create Restore
+
+```yaml
+apiVersion: velero.io/v1
+kind: Restore
+metadata:
+  name: my-restore
+  namespace: velero
+spec:
+  backupName: my-backup
+```
+
+```bash
+kubectl apply -f restore.yaml
+kubectl get restores -n velero -w
+```
+
+---
+
+## DR Checklist
+
+- [ ] BackupStorageLocation is Available
+- [ ] Test restore of namespace without PVCs
+- [ ] Test restore of namespace with PVCs
+- [ ] Test label-based backup/restore
+- [ ] Document RTO/RPO
