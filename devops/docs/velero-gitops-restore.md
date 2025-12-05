@@ -34,13 +34,17 @@ velero backup create --from-schedule <name>
 ```bash
 NS=monitoring  # target namespace
 
-# 1. Get ArgoCD apps deploying to this namespace
-kubectl get applications -n argocd \
-  -o jsonpath="{range .items[?(@.spec.destination.namespace==\"$NS\")]}{.metadata.name}{'\n'}{end}"
+# Helper function: get ArgoCD apps by destination namespace
+get_apps() {
+  kubectl get applications -n argocd -o json | \
+    python3 -c "import sys,json; apps=json.load(sys.stdin)['items']; print('\n'.join([a['metadata']['name'] for a in apps if a['spec']['destination'].get('namespace')=='$1']))"
+}
+
+# 1. List apps deploying to namespace
+get_apps $NS
 
 # 2. Disable ArgoCD automated sync
-for app in $(kubectl get applications -n argocd \
-  -o jsonpath="{range .items[?(@.spec.destination.namespace==\"$NS\")]}{.metadata.name}{'\n'}{end}"); do
+for app in $(get_apps $NS); do
   argocd app set $app --sync-policy none
 done
 
@@ -58,8 +62,7 @@ velero restore create --from-backup <backup-name> --wait
 kubectl get pods -n $NS -w
 
 # 7. Enable ArgoCD automated sync with self-heal
-for app in $(kubectl get applications -n argocd \
-  -o jsonpath="{range .items[?(@.spec.destination.namespace==\"$NS\")]}{.metadata.name}{'\n'}{end}"); do
+for app in $(get_apps $NS); do
   argocd app set $app --sync-policy automated --self-heal
 done
 ```
