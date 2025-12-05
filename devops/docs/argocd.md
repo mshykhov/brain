@@ -21,14 +21,8 @@ sudo mv argocd /usr/local/bin/
 
 ```bash
 # Core mode (через kubectl, без API server)
+kubectl config set-context --current --namespace=argocd
 argocd login --core
-
-# ВАЖНО: для core mode нужно указывать namespace в каждой команде
-argocd app list --core --controller-namespace argocd
-
-# Или установить переменную (рекомендуется)
-export ARGOCD_OPTS="--core --controller-namespace argocd"
-argocd app list
 
 # Через server
 argocd login argocd.example.com --grpc-web

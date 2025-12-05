@@ -34,32 +34,37 @@ velero backup create --from-schedule <name>
 ```bash
 NS=example-api-dev  # target namespace
 
-# 1. Get all ArgoCD apps deploying to this namespace
-kubectl get applications -n argocd -o jsonpath="{range .items[?(@.spec.destination.namespace==\"$NS\")]}{.metadata.name}{'\n'}{end}"
+# 1. Disable ArgoCD selfHeal
+# Option A: by labels (if apps have app/env labels)
+argocd app list -l app=example-api,env=dev -o name | \
+  xargs -I {} argocd app set {} --sync-policy none
 
-# 2. Disable ArgoCD selfHeal
+# Option B: by destination namespace (kubectl)
 for app in $(kubectl get applications -n argocd -o jsonpath="{range .items[?(@.spec.destination.namespace==\"$NS\")]}{.metadata.name}{'\n'}{end}"); do
-  kubectl patch application $app -n argocd --type=merge \
-    -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":false}}}}'
+  argocd app set $app --sync-policy none
 done
 
-# 3. Scale down workloads
+# 2. Scale down workloads
 kubectl scale deployment --all -n $NS --replicas=0
 kubectl scale statefulset --all -n $NS --replicas=0
 
-# 4. Delete PVCs
+# 3. Delete PVCs
 kubectl delete pvc --all -n $NS
 
-# 5. Restore
+# 4. Restore
 velero restore create --from-backup <backup-name> --wait
 
-# 6. Wait for pods
+# 5. Wait for pods
 kubectl get pods -n $NS -w
 
-# 7. Enable ArgoCD selfHeal
+# 6. Enable ArgoCD selfHeal
+# Option A: by labels
+argocd app list -l app=example-api,env=dev -o name | \
+  xargs -I {} argocd app set {} --self-heal
+
+# Option B: by destination namespace
 for app in $(kubectl get applications -n argocd -o jsonpath="{range .items[?(@.spec.destination.namespace==\"$NS\")]}{.metadata.name}{'\n'}{end}"); do
-  kubectl patch application $app -n argocd --type=merge \
-    -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true}}}}'
+  argocd app set $app --self-heal
 done
 ```
 
