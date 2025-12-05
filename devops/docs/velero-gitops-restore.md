@@ -1,7 +1,25 @@
 # Velero Restore в GitOps окружении
 
-**Velero** - backup всего кроме PostgreSQL (PVC excluded by label).
-**CNPG** - PostgreSQL backup в S3 через Barman (отдельная настройка).
+**Velero** - backup всего кроме PostgreSQL PVC.
+**CNPG** - PostgreSQL backup в S3 через Barman.
+
+## Как работает исключение PostgreSQL
+
+Velero использует `volumePolicies` с `pvcLabels` для исключения CNPG PVC:
+
+```yaml
+# manifests/backup/velero-resource-policies.yaml
+volumePolicies:
+  - conditions:
+      pvcLabels:
+        cnpg.io/pvcRole: PG_DATA  # CNPG автоматически ставит этот label
+    action:
+      type: skip
+```
+
+**Источники:**
+- [Velero Resource Filtering - pvcLabels](https://velero.io/docs/main/resource-filtering/)
+- [CNPG Labels - cnpg.io/pvcRole](https://cloudnative-pg.io/documentation/current/labels_annotations/)
 
 ---
 
@@ -38,7 +56,7 @@ kubectl get pvc -n $NS
 kubectl get cluster -n $NS
 ```
 
-PostgreSQL восстанавливается автоматически из S3 через CNPG `bootstrap.recovery`.
+PostgreSQL восстанавливается из S3 через CNPG `bootstrap.recovery`.
 
 ---
 
@@ -50,5 +68,7 @@ PostgreSQL восстанавливается автоматически из S3
 
 ## Links
 
-- [Velero Restore Reference](https://velero.io/docs/main/restore-reference/)
+- [Velero Resource Filtering](https://velero.io/docs/main/resource-filtering/)
+- [Velero FSB Documentation](https://velero.io/docs/main/file-system-backup/)
+- [CNPG Labels and Annotations](https://cloudnative-pg.io/documentation/current/labels_annotations/)
 - [CNPG Backup Documentation](https://cloudnative-pg.io/documentation/current/backup/)
