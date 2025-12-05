@@ -32,29 +32,35 @@ velero backup create --from-schedule <name>
 **Рекомендуемый процесс:**
 
 ```bash
-# Find app name (usually same as namespace)
-kubectl get applications -n argocd
+NS=example-api-dev  # target namespace
 
-# 1. Disable ArgoCD selfHeal
-kubectl patch application <app-name> -n argocd --type=merge \
-  -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":false}}}}'
+# 1. Get all ArgoCD apps deploying to this namespace
+kubectl get applications -n argocd -o jsonpath="{range .items[?(@.spec.destination.namespace==\"$NS\")]}{.metadata.name}{'\n'}{end}"
 
-# 2. Scale down workloads
-kubectl scale deployment --all -n <namespace> --replicas=0
-kubectl scale statefulset --all -n <namespace> --replicas=0
+# 2. Disable ArgoCD selfHeal
+for app in $(kubectl get applications -n argocd -o jsonpath="{range .items[?(@.spec.destination.namespace==\"$NS\")]}{.metadata.name}{'\n'}{end}"); do
+  kubectl patch application $app -n argocd --type=merge \
+    -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":false}}}}'
+done
 
-# 3. Delete PVCs (для восстановления данных)
-kubectl delete pvc --all -n <namespace>
+# 3. Scale down workloads
+kubectl scale deployment --all -n $NS --replicas=0
+kubectl scale statefulset --all -n $NS --replicas=0
 
-# 4. Restore
+# 4. Delete PVCs
+kubectl delete pvc --all -n $NS
+
+# 5. Restore
 velero restore create --from-backup <backup-name> --wait
 
-# 5. Wait for pods
-kubectl get pods -n <namespace> -w
+# 6. Wait for pods
+kubectl get pods -n $NS -w
 
-# 6. Enable ArgoCD selfHeal
-kubectl patch application <app-name> -n argocd --type=merge \
-  -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true}}}}'
+# 7. Enable ArgoCD selfHeal
+for app in $(kubectl get applications -n argocd -o jsonpath="{range .items[?(@.spec.destination.namespace==\"$NS\")]}{.metadata.name}{'\n'}{end}"); do
+  kubectl patch application $app -n argocd --type=merge \
+    -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true}}}}'
+done
 ```
 
 ### Альтернатива: Удаление ArgoCD Application
