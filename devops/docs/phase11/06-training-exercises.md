@@ -53,26 +53,33 @@ velero version
 ## Exercise 1: Basic Backup & Restore (Dev Environment)
 
 ### Goal
-Создать бэкап dev namespace, удалить данные, восстановить.
+Создать бэкап dev namespaces, удалить данные, восстановить.
+
+### Namespace Structure
+```
+example-api-dev    - API (app + redis cache + postgres db)
+example-ui-dev     - UI frontend
+```
 
 ### Steps
 
 ```bash
 # 1. Проверить текущее состояние
-kubectl get pods -n dev
-kubectl get pvc -n dev
+kubectl get pods -n example-api-dev
+kubectl get pods -n example-ui-dev
+kubectl get pvc -n example-api-dev
 
 # 2. Создать бэкап
 velero backup create dev-training-backup \
-  --include-namespaces=dev \
+  --include-namespaces=example-api-dev,example-ui-dev \
   --wait
 
 # 3. Проверить бэкап
 velero backup describe dev-training-backup --details
 velero backup logs dev-training-backup
 
-# 4. Симулировать disaster - удалить namespace
-kubectl delete namespace dev
+# 4. Симулировать disaster - удалить namespace (ОСТОРОЖНО!)
+kubectl delete namespace example-api-dev
 
 # 5. Восстановить
 velero restore create dev-restore \
@@ -80,8 +87,8 @@ velero restore create dev-restore \
   --wait
 
 # 6. Проверить восстановление
-kubectl get pods -n dev
-kubectl get pvc -n dev
+kubectl get pods -n example-api-dev
+kubectl get pvc -n example-api-dev
 velero restore describe dev-restore
 ```
 
