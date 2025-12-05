@@ -36,9 +36,15 @@ kubectl delete namespace <namespace>
 # 2. Restore
 velero restore create --from-backup <backup-name> --include-namespaces <namespace> --wait
 
-# 3. Verify
+# 3. Fix CNPG cluster status (if namespace has PostgreSQL)
+kubectl get cluster -n <namespace> -o name | xargs -I {} \
+  kubectl patch {} -n <namespace> --type=merge --subresource=status \
+  -p '{"status":{"phase":"Setting up primary","phaseReason":""}}'
+
+# 4. Verify
 kubectl get pods -n <namespace>
 kubectl get pvc -n <namespace>
+kubectl get cluster -n <namespace>
 
 # ArgoCD automatically recreates Applications and syncs resources
 ```
@@ -47,46 +53,38 @@ kubectl get pvc -n <namespace>
 
 ## CNPG Cluster Handling
 
-CNPG Cluster **исключён из backups** - ArgoCD пересоздаст его, CNPG примет восстановленный PVC.
+CNPG Cluster **исключён из backups** (`excludedNamespaceScopedResources`).
 
-```yaml
-# velero schedule config
-excludedNamespaceScopedResources:
-  - clusters.postgresql.cnpg.io
-```
+После restore ArgoCD создаёт новый Cluster, но он видит существующий PVC и переходит в "unrecoverable" состояние. Решение - patch status (шаг 3 выше).
 
 См: https://github.com/cloudnative-pg/cloudnative-pg/issues/5912
 
 ---
 
-## DR: Full Namespace Recovery
+## DR: Multiple Namespaces
 
 ```bash
 # 1. Check backup
 velero backup get
 velero backup describe <backup-name> --details
 
-# 2. Delete ArgoCD apps in project
-argocd app list -p <project> -o name | xargs argocd app delete -y --wait
-
-# 3. Delete namespaces
+# 2. Delete namespaces
 kubectl delete namespace <ns1> <ns2> <ns3>
 
-# 4. Wait for deletion
-kubectl get namespace | grep <pattern>
+# 3. Restore
+velero restore create --from-backup <backup-name> \
+  --include-namespaces <ns1>,<ns2>,<ns3> --wait
 
-# 5. Restore
-velero restore create project-restore \
-  --from-backup <backup-name> \
-  --include-namespaces <ns1>,<ns2>,<ns3> \
-  --wait
+# 4. Fix CNPG clusters
+for ns in <ns1> <ns2> <ns3>; do
+  kubectl get cluster -n $ns -o name 2>/dev/null | xargs -I {} \
+    kubectl patch {} -n $ns --type=merge --subresource=status \
+    -p '{"status":{"phase":"Setting up primary","phaseReason":""}}'
+done
 
-# 6. Verify
-kubectl get pods -A | grep <pattern>
-kubectl get pvc -A | grep <pattern>
-
-# 7. ArgoCD root app recreates Applications
-kubectl get applications -n argocd | grep <pattern>
+# 5. Verify
+kubectl get pods -A | grep -E "<ns1>|<ns2>|<ns3>"
+kubectl get pvc -A | grep -E "<ns1>|<ns2>|<ns3>"
 ```
 
 <details>
