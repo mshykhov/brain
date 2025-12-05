@@ -33,19 +33,28 @@ velero backup create --from-schedule <name>
 # Set variables
 NS=<namespace>
 BACKUP=<backup-name>
+APP=$NS  # ArgoCD app name (usually same as namespace)
 
-# 1. Delete namespace
-kubectl delete namespace $NS
+# 1. Disable ArgoCD auto-sync
+kubectl patch application $APP -n argocd --type=merge \
+  -p '{"spec":{"syncPolicy":{"automated":null}}}'
 
-# 2. Restore
+# 2. Delete namespace
+kubectl delete namespace $NS --wait=true
+
+# 3. Restore
 velero restore create --from-backup $BACKUP --include-namespaces $NS --wait
 
-# 3. Fix CNPG cluster status (if namespace has PostgreSQL)
+# 4. Fix CNPG cluster status (if namespace has PostgreSQL)
 kubectl get cluster -n $NS -o name | xargs -I {} \
   kubectl patch {} -n $NS --type=merge --subresource=status \
   -p '{"status":{"phase":"Setting up primary","phaseReason":""}}'
 
-# 4. Verify
+# 5. Re-enable ArgoCD auto-sync
+kubectl patch application $APP -n argocd --type=merge \
+  -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+
+# 6. Verify
 kubectl get pods -n $NS
 kubectl get pvc -n $NS
 kubectl get cluster -n $NS
