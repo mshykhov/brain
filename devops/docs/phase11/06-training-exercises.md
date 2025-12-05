@@ -2,6 +2,54 @@
 
 Практические упражнения для тренировки backup/restore операций.
 
+## Prerequisites: Install Velero CLI
+
+Velero CLI использует тот же kubeconfig что и kubectl.
+
+### Option 1: Homebrew (recommended for WSL/Linux/macOS)
+
+```bash
+# Install Homebrew first (if not installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Add Homebrew to PATH (add to ~/.bashrc or ~/.zshrc)
+echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc
+source ~/.bashrc
+
+# Install Velero
+brew install velero
+```
+
+### Option 2: Manual Download (Linux)
+
+```bash
+# Auto-download latest version
+VERSION=$(curl -s https://api.github.com/repos/vmware-tanzu/velero/releases/latest | grep tag_name | cut -d '"' -f 4)
+wget https://github.com/vmware-tanzu/velero/releases/download/${VERSION}/velero-${VERSION}-linux-amd64.tar.gz
+tar -xvf velero-${VERSION}-linux-amd64.tar.gz
+sudo mv velero-${VERSION}-linux-amd64/velero /usr/local/bin/
+velero version
+```
+
+### Option 3: Windows
+
+```powershell
+# Chocolatey
+choco install velero
+
+# Or Scoop
+scoop install velero
+```
+
+### Verify Installation
+
+```bash
+velero version
+# Should show Client and Server versions
+```
+
+---
+
 ## Exercise 1: Basic Backup & Restore (Dev Environment)
 
 ### Goal
