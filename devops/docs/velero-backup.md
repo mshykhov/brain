@@ -28,23 +28,29 @@ velero backup logs <backup>
 ### Manual Backup
 
 ```bash
-# Single namespace
+# From schedule (recommended - uses schedule settings incl. CNPG exclusion)
+velero backup create --from-schedule daily-applications
+
+# Custom backup (CNPG excluded)
 velero backup create my-backup \
   --include-namespaces <ns> \
+  --resource-policies-configmap velero-resource-policies \
   --default-volumes-to-fs-backup \
   --wait
-
-# From schedule (uses schedule settings)
-velero backup create --from-schedule daily-applications
 ```
 
+`--resource-policies-configmap` — исключает CNPG PVCs (обязательно для manual backup)
+
 ## Restore
+
+Default: skip existing resources. Use `--existing-resource-policy=update` to overwrite.
 
 ### Full Namespace
 
 ```bash
 velero restore create --from-backup <backup> \
   --include-namespaces <ns> \
+  --existing-resource-policy=update \
   --wait
 ```
 
@@ -53,6 +59,7 @@ velero restore create --from-backup <backup> \
 ```bash
 velero restore create --from-backup <backup> \
   --include-resources configmaps,secrets \
+  --existing-resource-policy=update \
   --wait
 ```
 
@@ -61,6 +68,7 @@ velero restore create --from-backup <backup> \
 ```bash
 velero restore create --from-backup <backup> \
   --namespace-mappings old-ns:new-ns \
+  --existing-resource-policy=update \
   --wait
 ```
 
