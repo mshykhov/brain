@@ -38,21 +38,27 @@ kubectl cnpg psql <cluster> -n <ns> -- -c "SELECT * FROM pg_stat_archiver;"
 
 ## Restore
 
+### How Recovery Works
+
+- `bootstrap.recovery` выполняется **только при создании** кластера
+- На существующий кластер не влияет
+- Для восстановления нужно удалить кластер и создать заново
+
 ### GitOps Flow
 
-1. Добавить recovery config в values файл
-2. Push → ArgoCD sync
-3. После восстановления — убрать recovery config
+1. Добавить `mode: recovery` в values
+2. `kubectl delete cluster <cluster> -n <ns>`
+3. ArgoCD создаёт новый кластер → recovery выполняется
+4. Убрать `mode: recovery` из values (cleanup)
 
 ### Recovery Config
 
 S3 settings уже в defaults. Добавить в `databases/<service>/postgres/<db>.yaml`:
 
 ```yaml
-# Restore from latest backup
 mode: recovery
 recovery:
-  clusterName: example-api-main-db-prd-cluster   # source cluster name
+  clusterName: <cluster>   # из kubectl get clusters -A (колонка NAME)
 ```
 
 ### PITR (Point-in-Time)
@@ -60,20 +66,11 @@ recovery:
 ```yaml
 mode: recovery
 recovery:
-  clusterName: example-api-main-db-prd-cluster
+  clusterName: <cluster>
   pitrTarget:
     time: "2025-12-06T10:00:00Z"
 ```
 
-### Disaster Recovery
-
-```bash
-# 1. Add recovery config to values (see above)
-# 2. Delete cluster (ArgoCD will recreate with recovery)
-kubectl delete cluster <cluster> -n <ns>
-
-# 3. Wait for restore, then remove recovery config from values
-```
 
 ## Troubleshooting
 
