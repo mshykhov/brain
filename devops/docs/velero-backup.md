@@ -49,26 +49,29 @@ velero backup create my-backup \
 NS=<namespace>
 BACKUP=<backup-name>
 
-# 1. Pause ArgoCD
+# 1. Save original ArgoCD syncPolicy
+ORIGINAL_SYNC=$(kubectl get app $NS -n argocd -o jsonpath='{.spec.syncPolicy}')
+
+# 2. Pause ArgoCD
 kubectl patch app $NS -n argocd --type merge -p '{"spec":{"syncPolicy":null}}'
 
-# 2. Scale down workloads
+# 3. Scale down workloads
 kubectl scale -n $NS deployment --all --replicas=0
 kubectl scale -n $NS statefulset --all --replicas=0
 
-# 3. Wait for pods to terminate (except CNPG)
+# 4. Wait for pods to terminate (except CNPG)
 kubectl wait -n $NS pod -l '!cnpg.io/cluster' --for=delete --timeout=60s 2>/dev/null || true
 
-# 4. Delete PVCs (except CNPG)
+# 5. Delete PVCs (except CNPG)
 kubectl delete pvc -n $NS -l 'cnpg.io/pvcRole notin (PG_DATA,PG_WAL)'
 
-# 5. Restore
+# 6. Restore
 velero restore create --from-backup $BACKUP --include-namespaces $NS --existing-resource-policy=update --wait
 
-# 6. Resume ArgoCD
-kubectl patch app $NS -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+# 7. Restore original ArgoCD syncPolicy
+kubectl patch app $NS -n argocd --type merge -p "{\"spec\":{\"syncPolicy\":$ORIGINAL_SYNC}}"
 
-# 7. Verify
+# 8. Verify
 kubectl get pods -n $NS
 ```
 
@@ -112,11 +115,14 @@ if [[ -z "$DRY_RUN" ]]; then
         --type merge --patch '{"spec":{"accessMode":"ReadOnly"}}'
 fi
 
-# 2. Pause ArgoCD sync
+# 2. Save and pause ArgoCD sync
 ARGOCD_APP=$(kubectl get app -n argocd -o name 2>/dev/null | grep "/$NS$" || true)
+ORIGINAL_SYNC=""
 if [[ -n "$ARGOCD_APP" ]]; then
-    log "Pausing ArgoCD app: $ARGOCD_APP"
+    log "Saving original syncPolicy and pausing ArgoCD app: $ARGOCD_APP"
     if [[ -z "$DRY_RUN" ]]; then
+        # Save original syncPolicy to restore later
+        ORIGINAL_SYNC=$(kubectl get "$ARGOCD_APP" -n argocd -o jsonpath='{.spec.syncPolicy}' 2>/dev/null || echo "null")
         kubectl patch "$ARGOCD_APP" -n argocd --type merge \
             -p '{"spec":{"syncPolicy":null}}'
     fi
@@ -191,12 +197,16 @@ if [[ -z "$DRY_RUN" ]]; then
         --type merge --patch '{"spec":{"accessMode":"ReadWrite"}}'
 fi
 
-# 8. Resume ArgoCD sync
+# 8. Restore original ArgoCD syncPolicy
 if [[ -n "$ARGOCD_APP" ]]; then
-    log "Resuming ArgoCD app: $ARGOCD_APP"
+    log "Restoring original syncPolicy for: $ARGOCD_APP"
     if [[ -z "$DRY_RUN" ]]; then
-        kubectl patch "$ARGOCD_APP" -n argocd --type merge \
-            -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+        if [[ -n "$ORIGINAL_SYNC" && "$ORIGINAL_SYNC" != "null" ]]; then
+            kubectl patch "$ARGOCD_APP" -n argocd --type merge \
+                -p "{\"spec\":{\"syncPolicy\":$ORIGINAL_SYNC}}"
+        else
+            log "No original syncPolicy found, leaving sync disabled"
+        fi
     fi
 fi
 
