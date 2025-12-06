@@ -1,0 +1,62 @@
+[
+  {
+    "exchange": "BITMART",
+    "ticker": "TRU",
+    "coinName": "Truebit Protocol"
+  },
+  {
+    "exchange": "KUCOIN",
+    "ticker": "ARC",
+    "coinName": "Arcade"
+  },
+  {
+    "exchange": "LBANK",
+    "ticker": "ZK",
+    "coinName": "ZKLBANK_RAZNIE_XZ_POCHEMY"
+  },
+  {
+    "exchange": "BINANCE",
+    "ticker": "AERGO",
+    "coinName": "AERGOBINANCE_MB_DELISTED"
+  },
+  {
+    "exchange": "WHITEBIT",
+    "ticker": "HOT",
+    "coinName": "HOTWHITEBIT"
+  },
+  {
+    "exchange": "LBANK",
+    "ticker": "INIT",
+    "coinName": "INIT_PREMARKET_TRASH"
+  },
+  {
+    "exchange": "MEXC",
+    "ticker": "TRUMP",
+    "coinName": "MEGATRUMP"
+  },
+  {
+    "exchange": "GATEIO",
+    "ticker": "NEIRO",
+    "coinName": "NEIROGATEIO"
+  },
+  {
+    "exchange": "LBANK",
+    "ticker": "VELO",
+    "coinName": "VelodromeV2"
+  },
+  {
+    "exchange": "KUCOIN",
+    "ticker": "NEIRO",
+    "coinName": "NEIROKUCOIN"
+  },
+  {
+    "exchange": "BITMART",
+    "ticker": "APX",
+    "coinName": "ApexToken"
+  },
+  {
+    "exchange": "BTSE",
+    "ticker": "DOG",
+    "coinName": "The doge nft"
+  }
+]
