@@ -43,55 +43,50 @@ velero backup create my-backup \
 
 ## Restore
 
-Default: skip existing resources. Use `--existing-resource-policy=update` to overwrite.
+### Full Restore (с данными volumes)
 
-### Full Namespace
+```bash
+# 1. Pause ArgoCD (optional - prevents conflicts during restore)
+kubectl patch app <app> -n argocd --type merge -p '{"spec":{"syncPolicy":null}}'
+
+# 2. Delete PVCs (иначе данные volumes не восстановятся!)
+kubectl delete pvc -n <ns> --all
+
+# 3. Restore
+velero restore create --from-backup <backup> --include-namespaces <ns> --existing-resource-policy=update --wait
+
+# 4. Resume ArgoCD
+kubectl patch app <app> -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+
+# 5. Verify
+kubectl get pods -n <ns>
+velero restore describe <restore-name>
+```
+
+### Только ConfigMaps/Secrets
 
 ```bash
 velero restore create --from-backup <backup> \
+  --include-resources configmaps,secrets \
   --include-namespaces <ns> \
   --existing-resource-policy=update \
   --wait
 ```
 
-### Specific Resources Only
-
-```bash
-velero restore create --from-backup <backup> \
-  --include-resources configmaps,secrets \
-  --existing-resource-policy=update \
-  --wait
-```
-
-### To Different Namespace
+### В другой Namespace
 
 ```bash
 velero restore create --from-backup <backup> \
   --namespace-mappings old-ns:new-ns \
-  --existing-resource-policy=update \
   --wait
 ```
 
-### Check Restore Status
+### Check Status
 
 ```bash
 velero restore get
 velero restore describe <restore>
 velero restore logs <restore>
-```
-
-## GitOps Restore Flow
-
-После restore ArgoCD автоматически синхронизирует:
-
-```bash
-# 1. Restore namespace
-velero restore create --from-backup <backup> --include-namespaces <ns> --wait
-
-# 2. ArgoCD detects drift → syncs
-# 3. Verify
-kubectl get pods -n <ns>
-argocd app get <app>
 ```
 
 ## PostgreSQL (CNPG)
