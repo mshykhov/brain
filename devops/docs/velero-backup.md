@@ -49,38 +49,30 @@ velero backup create my-backup \
 NS=<namespace>
 BACKUP=<backup-name>
 
-# 1. Save original ArgoCD syncPolicy
-ORIGINAL_SYNC=$(kubectl get app $NS -n argocd -o jsonpath='{.spec.syncPolicy}')
-
-# 2. Pause ArgoCD
+# 1. Pause ArgoCD
 kubectl patch app $NS -n argocd --type merge -p '{"spec":{"syncPolicy":null}}'
 
-# 3. Scale down workloads (pods must be stopped for FSB restore)
-kubectl scale -n $NS deployment --all --replicas=0
-kubectl scale -n $NS statefulset --all --replicas=0 2>/dev/null || true
-# Scale non-CNPG statefulsets only
-for sts in $(kubectl get sts -n $NS -o name | grep -v "cnpg\|cluster"); do
-  kubectl scale -n $NS $sts --replicas=0
-done
-
-# 4. Wait for pods to terminate (except CNPG)
+# 2. Delete workloads and PVCs (except CNPG) - Velero will recreate
+kubectl delete deploy,sts,pvc -n $NS -l '!cnpg.io/cluster' --wait=false 2>/dev/null || true
 kubectl wait -n $NS pod -l '!cnpg.io/cluster' --for=delete --timeout=120s 2>/dev/null || true
 
-# 5. Restore (DO NOT delete PVCs - Velero FSB restores data in-place)
-velero restore create --from-backup $BACKUP \
-  --include-namespaces $NS \
-  --existing-resource-policy=update \
-  --wait
+# 3. Restore
+velero restore create --from-backup $BACKUP --include-namespaces $NS --wait
 
-# 6. Restore original ArgoCD syncPolicy
-kubectl patch app $NS -n argocd --type merge -p "{\"spec\":{\"syncPolicy\":$ORIGINAL_SYNC}}"
+# 4. Resume ArgoCD
+kubectl patch app $NS -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true}}}}'
 
-# 7. Verify
+# 5. Verify
 kubectl get pods -n $NS
-velero restore describe $(velero restore get -o name | tail -1) --details
 ```
 
-**Важно:** НЕ удаляй PVC перед restore! FSB (kopia) восстанавливает данные в существующий PV.
+**Как работает FSB restore:**
+- Velero создаёт PVC → новый PV
+- Velero создаёт Pod с **init container** (velero-restore-helper)
+- Init container ждёт пока kopia восстановит данные
+- После FSB main container стартует с данными
+
+**CRITICAL:** ArgoCD должен быть на паузе! Иначе он создаст pod БЕЗ init container.
 
 ### Restore Script (полная версия)
 
@@ -135,13 +127,13 @@ if [[ -n "$ARGOCD_APP" ]]; then
     fi
 fi
 
-# 3. Scale down workloads (except CNPG)
-log "Scaling down deployments and statefulsets..."
+# 3. Delete workloads (Velero will recreate with FSB init container)
+log "Deleting deployments and statefulsets (Velero will recreate)..."
 if [[ -z "$DRY_RUN" ]]; then
-    kubectl scale -n "$NS" deployment --all --replicas=0 2>/dev/null || true
-    # Scale only non-CNPG statefulsets
-    for sts in $(kubectl get sts -n "$NS" -o name 2>/dev/null | grep -v "cnpg" || true); do
-        kubectl scale -n "$NS" "$sts" --replicas=0
+    kubectl delete deployment -n "$NS" --all --wait=false 2>/dev/null || true
+    # Delete only non-CNPG statefulsets
+    for sts in $(kubectl get sts -n "$NS" -o name 2>/dev/null | grep -v "cluster" || true); do
+        kubectl delete -n "$NS" "$sts" --wait=false
     done
 fi
 
@@ -154,9 +146,13 @@ if [[ -z "$DRY_RUN" ]]; then
         --timeout=120s 2>/dev/null || true
 fi
 
-# 5. List PVCs (FSB will restore data in-place, DO NOT delete PVCs)
-log "Listing PVCs (will NOT be deleted - FSB restores data in-place)..."
-kubectl get pvc -n "$NS" 2>/dev/null || true
+# 5. Delete PVCs (except CNPG) - Velero will recreate them with FSB init container
+log "Deleting PVCs (except CNPG) - Velero will recreate..."
+if [[ -z "$DRY_RUN" ]]; then
+    kubectl delete pvc -n "$NS" -l '!cnpg.io/cluster' --wait=false 2>/dev/null || true
+    # Wait for PVCs to be deleted
+    sleep 5
+fi
 
 # 6. Run Velero restore
 log "Starting Velero restore: $RESTORE_NAME"
