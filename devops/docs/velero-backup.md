@@ -55,25 +55,32 @@ ORIGINAL_SYNC=$(kubectl get app $NS -n argocd -o jsonpath='{.spec.syncPolicy}')
 # 2. Pause ArgoCD
 kubectl patch app $NS -n argocd --type merge -p '{"spec":{"syncPolicy":null}}'
 
-# 3. Scale down workloads
+# 3. Scale down workloads (pods must be stopped for FSB restore)
 kubectl scale -n $NS deployment --all --replicas=0
-kubectl scale -n $NS statefulset --all --replicas=0
+kubectl scale -n $NS statefulset --all --replicas=0 2>/dev/null || true
+# Scale non-CNPG statefulsets only
+for sts in $(kubectl get sts -n $NS -o name | grep -v "cnpg\|cluster"); do
+  kubectl scale -n $NS $sts --replicas=0
+done
 
 # 4. Wait for pods to terminate (except CNPG)
-kubectl wait -n $NS pod -l '!cnpg.io/cluster' --for=delete --timeout=60s 2>/dev/null || true
+kubectl wait -n $NS pod -l '!cnpg.io/cluster' --for=delete --timeout=120s 2>/dev/null || true
 
-# 5. Delete PVCs (except CNPG)
-kubectl delete pvc -n $NS -l 'cnpg.io/pvcRole notin (PG_DATA,PG_WAL)'
+# 5. Restore (DO NOT delete PVCs - Velero FSB restores data in-place)
+velero restore create --from-backup $BACKUP \
+  --include-namespaces $NS \
+  --existing-resource-policy=update \
+  --wait
 
-# 6. Restore
-velero restore create --from-backup $BACKUP --include-namespaces $NS --existing-resource-policy=update --wait
-
-# 7. Restore original ArgoCD syncPolicy
+# 6. Restore original ArgoCD syncPolicy
 kubectl patch app $NS -n argocd --type merge -p "{\"spec\":{\"syncPolicy\":$ORIGINAL_SYNC}}"
 
-# 8. Verify
+# 7. Verify
 kubectl get pods -n $NS
+velero restore describe $(velero restore get -o name | tail -1) --details
 ```
+
+**Важно:** НЕ удаляй PVC перед restore! FSB (kopia) восстанавливает данные в существующий PV.
 
 ### Restore Script (полная версия)
 
@@ -147,29 +154,9 @@ if [[ -z "$DRY_RUN" ]]; then
         --timeout=120s 2>/dev/null || true
 fi
 
-# 5. Delete PVCs (except CNPG)
-log "Deleting PVCs (except CNPG)..."
-if [[ -z "$DRY_RUN" ]]; then
-    # Get all PVCs that are NOT CNPG
-    NON_CNPG_PVCS=$(kubectl get pvc -n "$NS" \
-        -l 'cnpg.io/pvcRole notin (PG_DATA,PG_WAL)' \
-        -o name 2>/dev/null || true)
-
-    if [[ -n "$NON_CNPG_PVCS" ]]; then
-        echo "$NON_CNPG_PVCS" | xargs -r kubectl delete -n "$NS"
-    fi
-
-    # Also delete PVCs without the cnpg label (but not CNPG ones)
-    kubectl get pvc -n "$NS" --no-headers 2>/dev/null | \
-        while read -r pvc _; do
-            # Skip if it's a CNPG PVC
-            if kubectl get pvc "$pvc" -n "$NS" -o jsonpath='{.metadata.labels.cnpg\.io/cluster}' 2>/dev/null | grep -q .; then
-                log "Skipping CNPG PVC: $pvc"
-                continue
-            fi
-            kubectl delete pvc "$pvc" -n "$NS" 2>/dev/null || true
-        done
-fi
+# 5. List PVCs (FSB will restore data in-place, DO NOT delete PVCs)
+log "Listing PVCs (will NOT be deleted - FSB restores data in-place)..."
+kubectl get pvc -n "$NS" 2>/dev/null || true
 
 # 6. Run Velero restore
 log "Starting Velero restore: $RESTORE_NAME"
