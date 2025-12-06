@@ -47,10 +47,26 @@ velero backup create my-backup \
 NS=<namespace>
 BACKUP=<backup-name>
 
+# Pause ArgoCD
 kubectl patch app $NS -n argocd --type merge -p '{"spec":{"syncPolicy":null}}'
+
+# Scale down workloads
+kubectl scale -n $NS deployment --all --replicas=0
+kubectl scale -n $NS statefulset --all --replicas=0
+
+# Wait for pods to terminate (except CNPG)
+kubectl wait -n $NS pod -l '!cnpg.io/cluster' --for=delete --timeout=60s 2>/dev/null || true
+
+# Delete PVCs (except CNPG)
 kubectl delete pvc -n $NS -l 'cnpg.io/pvcRole notin (PG_DATA,PG_WAL)'
+
+# Restore
 velero restore create --from-backup $BACKUP --include-namespaces $NS --existing-resource-policy=update --wait
+
+# Resume ArgoCD
 kubectl patch app $NS -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+
+# Verify
 kubectl get pods -n $NS
 ```
 
