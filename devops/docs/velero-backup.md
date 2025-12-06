@@ -44,19 +44,17 @@ velero backup create my-backup \
 ## Restore
 
 ```bash
-# 1. Delete namespace
-kubectl delete namespace <ns>
+NS=<namespace>
+BACKUP=<backup-name>
 
-# 2. Velero restore (Redis, configs, K8s resources)
-velero restore create --from-backup <backup> --include-namespaces <ns> --wait
-
-# 3. CNPG restore (PostgreSQL) → см. cnpg-backup.md
-#    Добавить в values: mode: recovery + recovery.clusterName
-#    ArgoCD sync создаст новый cluster из S3 backup
-
-# 4. Verify
-kubectl get pods -n <ns>
+kubectl patch app $NS -n argocd --type merge -p '{"spec":{"syncPolicy":null}}'
+kubectl delete pvc -n $NS -l 'cnpg.io/pvcRole notin (PG_DATA,PG_WAL)'
+velero restore create --from-backup $BACKUP --include-namespaces $NS --existing-resource-policy=update --wait
+kubectl patch app $NS -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+kubectl get pods -n $NS
 ```
+
+CNPG остаётся нетронутым. Для восстановления PostgreSQL → [cnpg-backup.md](cnpg-backup.md)
 
 ## PostgreSQL (CNPG)
 
