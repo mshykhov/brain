@@ -43,50 +43,19 @@ velero backup create my-backup \
 
 ## Restore
 
-### Full Restore (с данными volumes)
-
 ```bash
-# 1. Pause ArgoCD (optional - prevents conflicts during restore)
-kubectl patch app <app> -n argocd --type merge -p '{"spec":{"syncPolicy":null}}'
+# 1. Delete namespace
+kubectl delete namespace <ns>
 
-# 2. Delete PVCs (иначе данные volumes не восстановятся!)
-kubectl delete pvc -n <ns> --all
+# 2. Velero restore (Redis, configs, K8s resources)
+velero restore create --from-backup <backup> --include-namespaces <ns> --wait
 
-# 3. Restore
-velero restore create --from-backup <backup> --include-namespaces <ns> --existing-resource-policy=update --wait
+# 3. CNPG restore (PostgreSQL) → см. cnpg-backup.md
+#    Добавить в values: mode: recovery + recovery.clusterName
+#    ArgoCD sync создаст новый cluster из S3 backup
 
-# 4. Resume ArgoCD
-kubectl patch app <app> -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
-
-# 5. Verify
+# 4. Verify
 kubectl get pods -n <ns>
-velero restore describe <restore-name>
-```
-
-### Только ConfigMaps/Secrets
-
-```bash
-velero restore create --from-backup <backup> \
-  --include-resources configmaps,secrets \
-  --include-namespaces <ns> \
-  --existing-resource-policy=update \
-  --wait
-```
-
-### В другой Namespace
-
-```bash
-velero restore create --from-backup <backup> \
-  --namespace-mappings old-ns:new-ns \
-  --wait
-```
-
-### Check Status
-
-```bash
-velero restore get
-velero restore describe <restore>
-velero restore logs <restore>
 ```
 
 ## PostgreSQL (CNPG)
