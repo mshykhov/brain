@@ -1,21 +1,25 @@
 # Infrastructure Fixes TODO
 
-## In Progress
-- [ ] ArgoCD projects - replace hardcoded `example-*` with `{{ .Values.global.servicePrefix }}-*`
-  - Files: `charts/argocd-config/templates/projects.yaml`
-  - Need: add `servicePrefix` to values.yaml and pass via valuesObject
+## 1. doppler-prd.yaml - DONE
+- [x] Fix comment "dev environment" → "prd environment"
+- File: `manifests/core/cluster-secret-stores/doppler-prd.yaml`
 
-## Completed
-- [x] doppler-prd.yaml - fix comment "dev environment" → "prd environment"
+## 2. ArgoCD projects hardcoded namespaces - IN PROGRESS
+- [ ] Replace hardcoded `example-*` with `{{ .Values.global.servicePrefix }}-*`
+- File: `charts/argocd-config/templates/projects.yaml` (lines 70, 117, 175, 192)
+- Need: add `servicePrefix` to values.yaml and pass via valuesObject
 
-## Pending
-- [ ] oauth2-proxy-endpoint.yaml - not updated for `subdomain` pattern
-  - File: `charts/protected-services/templates/oauth2-proxy-endpoint.yaml`
-  - Issue: Uses old `$service.hostname` instead of new `subdomain` pattern from ingresses.yaml
-  - Need: Sync logic with ingresses.yaml
+## 3. charts/credentials - no values.yaml - NOT AN ISSUE
+- Chart uses valuesObject from Application (passes global.* values)
+- This is correct pattern - no fix needed
 
-- [ ] README placeholders table - add `<SERVICE_PREFIX>` after implementation
+## 4. oauth2-proxy-endpoint.yaml - TODO
+- [ ] Not updated for `subdomain` pattern
+- File: `charts/protected-services/templates/oauth2-proxy-endpoint.yaml`
+- Issue: Uses old `$service.hostname` instead of new `subdomain` pattern
+- Need: Sync logic with `ingresses.yaml`
 
-## Notes
-- `charts/credentials/values.yaml` - NOT needed (uses valuesObject from Application)
-- `charts/redis-instance/templates/_helpers.tpl` - NEEDED (used by all templates)
+## 5. redis-instance/_helpers.tpl - NOT AN ISSUE
+- File exists and is NEEDED (used by all templates)
+- Contains: fullname, labels, secretName helpers
+- No fix needed
