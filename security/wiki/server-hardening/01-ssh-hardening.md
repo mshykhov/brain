@@ -60,55 +60,77 @@ chmod 600 ~/.ssh/authorized_keys
 ## Шаг 3: Настроить sshd_config
 
 ```bash
-sudo nano /etc/ssh/sshd_config
-```
+# Бэкап
+sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
 
-```bash
-# === Аутентификация ===
+# Перезаписать конфиг одной командой
+sudo tee /etc/ssh/sshd_config << 'EOF'
+Include /etc/ssh/sshd_config.d/*.conf
+Port 2222
+AddressFamily inet
+ListenAddress 0.0.0.0
+
+HostKey /etc/ssh/ssh_host_ed25519_key
+
 PermitRootLogin no
 PasswordAuthentication no
 PubkeyAuthentication yes
 AuthenticationMethods publickey
 MaxAuthTries 3
 MaxSessions 3
-
-# === Пользователи ===
-AllowUsers myron                    # только твой юзер
-
-# === Сеть ===
-Port 2222                           # сменить стандартный порт
-AddressFamily inet                  # только IPv4 (или inet6 / any)
-ListenAddress 0.0.0.0               # позже сменить на Tailscale IP
-
-# === Таймауты ===
-ClientAliveInterval 300
-ClientAliveCountMax 2
 LoginGraceTime 30
 
-# === Криптография (2025) ===
-KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
+AllowUsers ubuntu
+
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
 Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 HostKeyAlgorithms ssh-ed25519,ssh-ed25519-cert-v01@openssh.com
 
-# === Отключить лишнее ===
 X11Forwarding no
 AllowTcpForwarding no
 AllowAgentForwarding no
 PermitTunnel no
+PermitUserEnvironment no
+
+UsePAM yes
+PrintMotd no
+AcceptEnv LANG LC_*
+Subsystem sftp /usr/lib/openssh/sftp-server
+EOF
 ```
 
 ## Шаг 4: Применить настройки
 
 ```bash
-# Проверить синтаксис
-sudo sshd -t
-
-# Перезапустить SSH
-sudo systemctl restart sshd
+sudo sshd -t && sudo systemctl daemon-reload && sudo systemctl restart ssh
 ```
 
-**ВАЖНО**: Не закрывай текущую сессию! Открой новый терминал и проверь что можешь подключиться.
+**ВАЖНО**: Не закрывай текущую сессию! Открой новый терминал и проверь подключение:
+
+```powershell
+ssh -p 2222 -i $HOME\.ssh\ovh-server ubuntu@217.182.197.59
+```
+
+## Шаг 4.5: Добавить SSH config (Windows)
+
+Добавить в `C:\Users\Myron\.ssh\config`:
+
+```
+Host ovh
+    HostName 217.182.197.59
+    User ubuntu
+    Port 2222
+    IdentityFile C:\Users\Myron\.ssh\ovh-server
+```
+
+Теперь подключение просто:
+```powershell
+ssh ovh
+```
 
 ## Шаг 5: Установить Fail2Ban
 
