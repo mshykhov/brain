@@ -132,56 +132,15 @@ Host ovh
 ssh ovh
 ```
 
-## Шаг 5: Установить Fail2Ban
-
-```bash
-sudo apt update && sudo apt install fail2ban -y
-
-# Создать локальную конфигурацию
-sudo nano /etc/fail2ban/jail.local
-```
-
-```ini
-[sshd]
-enabled = true
-port = 2222
-filter = sshd
-logpath = /var/log/auth.log
-maxretry = 3
-bantime = 3600
-findtime = 600
-```
-
-```bash
-sudo systemctl enable fail2ban
-sudo systemctl start fail2ban
-
-# Проверить статус
-sudo fail2ban-client status sshd
-```
-
-## Шаг 6: Обновить ~/.ssh/config (локально)
-
-```bash
-# ~/.ssh/config
-Host ovh
-    HostName server-ip-or-tailscale-ip
-    User myron
-    Port 2222
-    IdentityFile ~/.ssh/id_ed25519
-    IdentitiesOnly yes
-```
-
-Теперь подключение: `ssh ovh`
-
 ## Проверка
 
 - [ ] Вход по паролю отключен
 - [ ] Root login отключен
 - [ ] Только ED25519 ключи
-- [ ] Нестандартный порт
+- [ ] Нестандартный порт (2222)
+- [ ] SSH config настроен (Windows)
 - [ ] Fail2Ban работает
-- [ ] SSH ключ сохранён в Keeper
+- [ ] SSH ключ + passphrase сохранены в Keeper
 
 ## Ссылки
 
