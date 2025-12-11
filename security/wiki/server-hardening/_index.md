@@ -17,11 +17,11 @@ tags: [server, k3s, ovh, bare-metal]
 
 | # | Этап | Статус |
 |---|------|--------|
-| 1 | [SSH Hardening](01-ssh-hardening.md) | ⬜ |
+| 1 | [SSH Hardening](01-ssh-hardening.md) | ✅ |
 | 2 | [Firewall Setup](02-firewall-setup.md) | ⬜ |
-| 3 | [K3s Secrets Encryption](03-k3s-secrets-encryption.md) | ⬜ |
-| 4 | [K3s Hardening](04-k3s-hardening.md) | ⬜ |
-| 5 | [Tailscale Setup](05-tailscale-setup.md) | ⬜ |
+| 3 | [Tailscale Setup](03-tailscale-setup.md) | ⬜ |
+| 4 | [K3s Installation](04-k3s-installation.md) | ⬜ |
+| 5 | [K3s Secrets & Hardening](05-k3s-hardening.md) | ⬜ |
 | 6 | [Network Policies](06-network-policies.md) | ⬜ |
 
 ## Принципы
