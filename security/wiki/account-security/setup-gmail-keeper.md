@@ -60,6 +60,8 @@
 2. Backup codes → Get backup codes
 3. **Скопируй все 10 кодов в `recovery.txt`**
 
+> После использования код становится неактивным. Можно сгенерировать новые 10 кодов в любое время.
+
 ---
 
 ## Шаг 3: Keeper
@@ -72,13 +74,24 @@
 4. Вставь YubiKey #1 → нажми кнопку
 5. **Повтори для YubiKey #2**
 
-### 3.2 Recovery Phrase
+### 3.2 Добавить Backup 2FA (TOTP)
+
+> **Важно:** Keeper требует backup 2FA метод при использовании Security Keys. Рекомендуется TOTP вместо SMS (защита от SIM swap атак).
+
+1. Settings → Security → Two-Factor Authentication
+2. Включи Google/Microsoft Authenticator (TOTP)
+3. **Сохрани TOTP seed в `recovery.txt`**
+4. Добавь в YubiKey (опционально) или любой authenticator
+
+### 3.3 Recovery Phrase
 
 1. Settings → Recovery Phrase
 2. Generate Recovery Phrase
 3. **Скопируй 24 слова в `recovery.txt`**
 
-### 3.3 Настройки безопасности
+> Recovery phrase позволяет сбросить master password, но всё равно потребуется пройти 2FA.
+
+### 3.4 Настройки безопасности
 
 1. Settings → Security:
    - Logout Timer: **15 минут**
@@ -87,9 +100,27 @@
 
 ---
 
-## Шаг 4: Encrypted File
+## Шаг 4: Gmail Failsafe
 
-### 4.1 Содержимое recovery.txt
+> **Цель:** Если потеряешь всё кроме телефона, сможешь восстановить доступ через Gmail.
+
+### 4.1 Сохрани в Google Keep или Gmail Draft
+
+1. Открой [keep.google.com](https://keep.google.com) или создай Draft в Gmail
+2. Добавь:
+   - Keeper TOTP seed
+   - Proton TOTP seed
+
+**Это позволит:**
+- Войти в Gmail через recovery phone
+- Получить TOTP seeds из Gmail
+- Восстановить Keeper и Proton
+
+---
+
+## Шаг 5: Encrypted File
+
+### 5.1 Содержимое recovery.txt
 
 ```
 === KEEPER ===
@@ -98,6 +129,8 @@ word1 word2 word3 word4 word5 word6
 word7 word8 word9 word10 word11 word12
 word13 word14 word15 word16 word17 word18
 word19 word20 word21 word22 word23 word24
+
+TOTP Secret: XXXXXXXXXXXXXXXX
 
 === GMAIL ===
 Backup Codes:
@@ -115,7 +148,7 @@ Primary: с собой
 Backup: дома
 ```
 
-### 4.2 Зашифровать
+### 5.2 Зашифровать
 
 **Windows (7-Zip):**
 ```
@@ -131,7 +164,7 @@ Backup: дома
 7z a -t7z -m0=lzma2 -mhe=on -p recovery.7z recovery.txt
 ```
 
-### 4.3 Удалить оригинал
+### 5.3 Удалить оригинал
 
 **Windows:**
 ```
@@ -143,14 +176,14 @@ Shift + Delete (не в корзину)
 shred -u recovery.txt
 ```
 
-### 4.4 Сохранить копии
+### 5.4 Сохранить копии
 
 1. Копия на USB (дома)
 2. Копия на Proton Drive
 
 ---
 
-## Шаг 5: Проверка
+## Шаг 6: Проверка
 
 ### Проверь YubiKey Primary
 
@@ -168,32 +201,102 @@ shred -u recovery.txt
 - [ ] Проверь что все данные читаемы
 - [ ] Расшифруй копию с Proton Drive
 
+### Проверь Gmail Failsafe
+
+- [ ] TOTP seeds доступны в Google Keep/Draft
+
 ---
 
 ## Recovery Paths
 
-### Keeper (3 пути)
+### Keeper
 
-| # | Путь | Что нужно |
-|---|------|-----------|
-| 1 | Normal | Master pwd + YubiKey |
-| 2 | Recovery | Archive pwd → phrase |
-| 3 | Biometrics | Телефон |
+| # | Сценарий | Решение |
+|---|----------|---------|
+| 1 | Нормальный вход | Master pwd + YubiKey |
+| 2 | Потерял 1 YubiKey | Master pwd + другой YubiKey |
+| 3 | Потерял оба YubiKey | Master pwd + TOTP (из Gmail или authenticator) |
+| 4 | Забыл Master pwd | Recovery phrase + 2FA |
+| 5 | Потерял всё + есть телефон | Gmail recovery → TOTP seed → Keeper |
+| 6 | Потерял YubiKeys + нет backup 2FA | Контакт Keeper Support (сброс 2FA) |
+| 7 | Залогинен на устройстве | Biometrics → Settings → Reset Master Password |
 
-### Gmail (4 пути)
+### Gmail
 
-| # | Путь | Что нужно |
-|---|------|-----------|
-| 1 | Normal | Gmail pwd + YubiKey |
-| 2 | Backup codes | Gmail pwd + Archive pwd |
-| 3 | Recovery email | Proton (Archive pwd) |
-| 4 | Recovery phone | SIM |
+| # | Сценарий | Решение |
+|---|----------|---------|
+| 1 | Нормальный вход | Gmail pwd + YubiKey |
+| 2 | Потерял YubiKeys | Gmail pwd + Backup codes (Archive pwd → USB) |
+| 3 | Нет backup codes | Gmail pwd + Recovery email (Proton) |
+| 4 | Нет доступа к Proton | Gmail pwd + Recovery phone |
+
+### Proton
+
+| # | Сценарий | Решение |
+|---|----------|---------|
+| 1 | Нормальный вход | Archive pwd + TOTP (YubiKey) |
+| 2 | Потерял YubiKeys | Archive pwd + TOTP seed (USB или Gmail) |
+
+---
+
+## Независимость путей
+
+```
+Gmail Recovery Phone ──────────────────────────┐
+       │                                       │
+       ▼                                       │
+    Gmail ◄───────────────────────┐            │
+       │                          │            │
+       │  ┌── TOTP seeds ────────►│            │
+       │  │   (Google Keep)       │            │
+       ▼  │                       │            │
+   Keeper ◄───── Master pwd ──────┤            │
+       │                          │            │
+       │                          │            │
+       ▼                          │            │
+   Proton ◄───── Archive pwd ─────┘            │
+       │                                       │
+       └─────── TOTP (Gmail) ──────────────────┘
+
+Независимые точки входа:
+1. YubiKey (любой из двух)
+2. Archive password + USB
+3. Recovery phone + Gmail password
+```
+
+---
+
+## Важно помнить
+
+### 3 пароля в голове
+
+| Пароль | Для чего |
+|--------|----------|
+| Gmail | Вход в Gmail |
+| Keeper master | Вход в Keeper |
+| Archive = Proton | Encrypted file + Proton |
+
+### Что защищает YubiKey
+
+✅ Защищает от:
+- Фишинг (FIDO2 привязан к домену)
+- Удалённый перехват паролей
+- SIM swap атаки
+
+❌ НЕ защищает от:
+- Keylogger на твоём PC
+- Malware с полным доступом
+- Физический доступ к разблокированному устройству
+
+### Keeper Support
+
+Если потерял все 2FA методы, Keeper Support может сбросить 2FA для индивидуальных пользователей. Потребуется подтверждение личности.
 
 ---
 
 ## Источники
 
+- [Keeper: Two-Factor Authentication](https://docs.keeper.io/en/enterprise-guide/two-factor-authentication)
+- [Keeper: Recovery Phrase](https://docs.keeper.io/en/user-guides/troubleshooting/reset-your-master-password)
 - [Google: Security Key](https://support.google.com/accounts/answer/6103523)
 - [Google: Backup Codes](https://support.google.com/accounts/answer/1187538)
-- [Keeper: Security Key](https://docs.keeper.io/en/enterprise-guide/two-factor-authentication)
-- [Keeper: Recovery Phrase](https://docs.keeper.io/en/user-guides/troubleshooting/reset-your-master-password)
