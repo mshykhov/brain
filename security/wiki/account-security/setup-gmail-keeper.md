@@ -31,26 +31,36 @@
 2. Recovery email → добавь **Gmail**
 3. Recovery phone → добавь **свой номер**
 
-### 1.3 Включить 2FA
+### 1.3 Добавить YubiKey (FIDO2)
+
+> **Основной метод** — фишинг-защита, как Gmail и Keeper.
 
 1. Settings → Security → Two-factor authentication
-2. Покажется QR код
+2. Security keys → Add security key
+3. Вставь YubiKey #1 → нажми кнопку
+4. Дай имя: "YubiKey Primary"
+5. **Повтори для YubiKey #2** → "YubiKey Backup"
+
+### 1.4 Добавить TOTP (backup)
+
+> **Backup метод** — если FIDO2 не работает на устройстве.
+
+1. Settings → Security → Two-factor authentication
+2. Authenticator app → Set up
 3. **СТОП!** Сначала сохрани seed:
    - Нажми "Can't scan QR code?" или "Enter key manually"
    - Скопируй secret key
-   - Сохрани в файл `recovery.txt`
-4. Теперь добавь в YubiKey #1:
-   - Открой Yubico Authenticator
-   - Add account → Manual → вставь secret
-5. Повтори для YubiKey #2
-6. Введи код → Confirm
+   - **Сохрани в `recovery.txt`**
+4. Добавь в Yubico Authenticator (опционально)
+5. Введи код → Confirm
 
-### 1.4 Recovery codes
+### 1.5 Recovery codes
 
-1. После включения 2FA → покажутся recovery codes
-2. **Скопируй все коды в `recovery.txt`**
+1. После настройки 2FA → Settings → Security
+2. Recovery codes → Generate
+3. **Скопируй все коды в `recovery.txt`**
 
-> Каждый код одноразовый. Используется вместо TOTP если потерял YubiKey.
+> Каждый код одноразовый. Используется если потерял YubiKey и нет доступа к TOTP.
 
 ---
 
@@ -216,13 +226,18 @@ shred -u recovery.txt
 
 ### Проверь YubiKey Primary
 
-- [ ] Gmail логин работает с YubiKey
-- [ ] Keeper логин работает с YubiKey
-- [ ] Proton TOTP с YubiKey работает
+- [ ] Gmail логин работает с YubiKey (FIDO2)
+- [ ] Keeper логин работает с YubiKey (FIDO2)
+- [ ] Proton логин работает с YubiKey (FIDO2)
 
 ### Проверь YubiKey Backup
 
 - [ ] Повтори все проверки с backup ключом
+
+### Проверь TOTP backup
+
+- [ ] Keeper TOTP работает (Yubico Authenticator или Gmail seed)
+- [ ] Proton TOTP работает (Yubico Authenticator или Gmail seed)
 
 ### Проверь Encrypted File
 
@@ -269,10 +284,11 @@ shred -u recovery.txt
 
 | # | Сценарий | Решение |
 |---|----------|---------|
-| 1 | Нормальный вход | Archive pwd + TOTP (YubiKey) |
-| 2 | Потерял YubiKeys | Archive pwd + TOTP seed (USB или Gmail) |
-| 3 | Нет TOTP seed | Archive pwd + Recovery codes (USB или Gmail) |
-| 4 | Забыл Archive pwd | Recovery email (Gmail) или Recovery phone |
+| 1 | Нормальный вход | Archive pwd + YubiKey (FIDO2) |
+| 2 | Потерял 1 YubiKey | Archive pwd + другой YubiKey |
+| 3 | Потерял оба YubiKey | Archive pwd + TOTP seed (USB или Gmail) |
+| 4 | Нет TOTP seed | Archive pwd + Recovery codes (USB или Gmail) |
+| 5 | Забыл Archive pwd | Recovery email (Gmail) или Recovery phone |
 
 > **Примечание:** При восстановлении через email/phone данные остаются зашифрованными. Нужен Archive pwd для расшифровки.
 
