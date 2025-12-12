@@ -3,194 +3,135 @@
 Архитектура восстановления доступа к критическим аккаунтам.
 
 > **Последнее обновление:** Декабрь 2024
-> **Статус:** Актуально
-
-## TL;DR — Независимые пути восстановления
-
-### Keeper (3 независимых пути)
-
-| # | Путь | Что нужно | Независимость |
-|---|------|-----------|---------------|
-| 1 | Нормальный вход | Master password + 2FA | Память + телефон |
-| 2 | Recovery phrase | Phrase из encrypted file + email | USB/Cloud + email |
-| 3 | Biometrics reset | Телефон с залогиненным Keeper | Только телефон |
-
-### Gmail (4 независимых пути)
-
-| # | Путь | Что нужно | Независимость |
-|---|------|-----------|---------------|
-| 1 | Нормальный вход | Password + 2FA | Память + телефон |
-| 2 | Backup codes | Password + codes из encrypted file | Память + USB/Cloud |
-| 3 | Recovery email | Доступ к Proton Mail | Proton аккаунт |
-| 4 | Recovery phone | Доступ к номеру телефона | SIM-карта |
+> **Принцип:** 3+ независимых пути восстановления для каждого сервиса
 
 ---
 
-## Что реально работает (официальные источники)
+## TL;DR
 
-| Сервис | Метод | Тип | Источник |
-|--------|-------|-----|----------|
-| Keeper | Master password + 2FA | Нормальный вход | docs.keeper.io |
-| Keeper | Recovery phrase (24 слова BIP39) | Forgot password | docs.keeper.io |
-| Keeper | Biometrics | Convenience (не DR) | docs.keeper.io |
-| Gmail | Password + 2FA | Нормальный вход | support.google.com |
-| Gmail | Password + Backup codes | Lost 2FA | support.google.com |
-| Gmail | Recovery email/phone | Forgot password | support.google.com |
-| Gmail | Passkey | Passwordless login | support.google.com |
-| 2FAS/Aegis | Encrypted backup + password | Restore tokens | Локальный backup |
+```
+3 пароля в голове
+2 YubiKey (primary + backup)
+1 USB + 1 Cloud
+= 3+ независимых пути восстановления
+```
 
-## Важные ограничения
+### Keeper: 3 независимых пути
 
-### Biometrics — это НЕ disaster recovery
+| # | Путь | Что нужно | Категория |
+|---|------|-----------|-----------|
+| 1 | Нормальный вход | Master pwd + YubiKey | Память + Hardware |
+| 2 | Recovery phrase | Archive pwd + USB/Cloud | Память + Digital |
+| 3 | Biometrics | Телефон с Keeper | Device |
 
-> "If you are able to log into Keeper's mobile app using Biometrics, you can reset your master password" — docs.keeper.io
+### Gmail: 4 независимых пути
 
-**Требует:** телефон + Keeper app залогинен + biometrics работает.
-**Если потерял телефон — не работает.**
-
-### USB и Cloud — redundancy, не разные способы
-
-Оба содержат один encrypted файл. Реальный способ один — содержимое файла.
-
-### Google recovery без опций
-
-> "If you still can't recover your account, you can create a new Google Account" — support.google.com
-
-**Без recovery email/phone Google может отказать в восстановлении.**
+| # | Путь | Что нужно | Категория |
+|---|------|-----------|-----------|
+| 1 | Нормальный вход | Gmail pwd + YubiKey | Память + Hardware |
+| 2 | Backup codes | Gmail pwd + Archive pwd | Память + Digital |
+| 3 | Recovery email | Archive pwd (Proton) | Digital |
+| 4 | Recovery phone | SIM карта | Physical |
 
 ---
 
-## Архитектура восстановления
+## Что нужно запомнить и купить
 
-### Keeper
+### 3 пароля в голове
+
+| # | Пароль | Для чего | Критичность |
+|---|--------|----------|-------------|
+| 1 | Gmail | Вход в Gmail | Высокая |
+| 2 | Keeper master | Вход в Keeper | Высокая |
+| 3 | Archive = Proton | Encrypted file + Proton Mail | **Критичная** |
+
+> **Совет:** Используй passphrase (4-5 случайных слов) — легче запомнить, сложнее взломать.
+
+### Hardware: 2x YubiKey 5 NFC
+
+| Ключ | Где хранить | Содержит |
+|------|-------------|----------|
+| Primary | С собой (ключи/кошелёк) | FIDO2 + TOTP seeds |
+| Backup | Дома | FIDO2 + TOTP seeds |
+
+**Почему YubiKey 5 NFC:**
+- FIDO2/WebAuthn — phishing-resistant (лучше TOTP)
+- TOTP storage — 32-64 слота для seeds
+- NFC — работает с телефоном
+- USB-A — работает с компьютером
+- ~$55 за штуку, $110 за пару
+
+### Storage: 1 USB + 1 Cloud
+
+| Хранилище | Где | Что содержит |
+|-----------|-----|--------------|
+| USB | Дома | Encrypted file (Archive pwd) |
+| Proton Drive | Cloud | Encrypted file (Archive pwd) |
+
+---
+
+## Архитектура
 
 ```
-СПОСОБ 1: Нормальный вход
-├── Master password (в голове)
-└── 2FA: YubiKey ИЛИ TOTP
+┌─────────────────────────────────────────────────────────────┐
+│                    3 ПАРОЛЯ В ГОЛОВЕ                        │
+├───────────────────┬───────────────────┬─────────────────────┤
+│      Gmail        │   Keeper master   │  Archive = Proton   │
+└─────────┬─────────┴─────────┬─────────┴──────────┬──────────┘
+          │                   │                    │
+          ▼                   ▼                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    2x YUBIKEY                               │
+├─────────────────────────────┬───────────────────────────────┤
+│   Primary (с собой)         │   Backup (дома)               │
+│   ├─ FIDO2: Gmail, Keeper   │   ├─ FIDO2: Gmail, Keeper     │
+│   └─ TOTP: Proton + backup  │   └─ TOTP: Proton + backup    │
+└─────────────────────────────┴───────────────────────────────┘
 
-СПОСОБ 2: Forgot password flow
-├── Recovery phrase (из encrypted файла)
-├── Email verification
-└── 2FA: backup метод
+┌─────────────────────────────────────────────────────────────┐
+│                    1 USB + 1 CLOUD                          │
+├─────────────────────────────┬───────────────────────────────┤
+│   USB (дома)                │   Proton Drive + Mail         │
+│   └─ encrypted file         │   ├─ encrypted file           │
+│      (Archive pwd)          │   │  (Archive pwd)            │
+│                             │   └─ Proton Mail              │
+│   Содержит:                 │      (Archive pwd)            │
+│   ├─ Keeper recovery phrase │      → Gmail recovery email   │
+│   ├─ Gmail backup codes     │                               │
+│   └─ TOTP seeds             │                               │
+└─────────────────────────────┴───────────────────────────────┘
 
-CONVENIENCE: Biometrics
-├── Работает ТОЛЬКО если телефон у тебя и app залогинен
-└── НЕ disaster recovery, но позволяет сбросить master password
-```
-
-### Gmail
-
-```
-СПОСОБ 1: Нормальный вход
-├── Password (в голове)
-└── 2FA: YubiKey / TOTP / Passkey
-
-СПОСОБ 2: Lost 2FA device
-├── Password (в голове)
-└── Backup codes (из encrypted файла)
-
-СПОСОБ 3: Forgot password
-├── Recovery email (Proton) ← независимый путь
-├── Recovery phone ← независимый путь
-└── 3-5 дней верификации Google
-
-СПОСОБ 4: Passkey recovery (с сентября 2024)
-├── Passkey синхронизирован в Google Password Manager
-├── На новом устройстве: PIN от GPM ИЛИ screen lock старого Android
-└── Passkey НЕ удаляет другие recovery методы
+┌─────────────────────────────────────────────────────────────┐
+│              НЕЗАВИСИМЫЕ ПУТИ (без паролей!)                │
+├─────────────────────────────┬───────────────────────────────┤
+│   Recovery phone            │   Keeper biometrics           │
+│   → Gmail recovery          │   → Keeper access             │
+│   (нужна только SIM)        │   (нужен только телефон)      │
+└─────────────────────────────┴───────────────────────────────┘
 ```
 
 ---
 
-## Пароли в голове (только 3)
+## Матрица независимости
 
-| # | Пароль | Критичность | Что теряешь если забыл |
-|---|--------|-------------|------------------------|
-| 1 | Gmail | Критичен | Email, recovery для сервисов |
-| 2 | Keeper master | Критичен | Все пароли (но есть recovery phrase) |
-| 3 | Archive (= Proton) | **САМЫЙ КРИТИЧНЫЙ** | Доступ к recovery data |
+### Keeper: что если потерял X?
 
-> **Archive password — единственный ключ к disaster recovery.**
-> Без него USB и Proton бесполезны.
+| Потерял | Path 1 (pwd+key) | Path 2 (file) | Path 3 (bio) | Результат |
+|---------|------------------|---------------|--------------|-----------|
+| Забыл Master pwd | ❌ | ✅ | ✅ | OK |
+| Потерял оба YubiKey | ✅ TOTP app | ✅ | ✅ | OK |
+| Забыл Archive pwd | ✅ | ❌ | ✅ | OK |
+| Потерял телефон | ✅ | ✅ | ❌ | OK |
+| Пожар (USB сгорел) | ✅ | ✅ cloud | ✅ | OK |
 
----
+### Gmail: что если потерял X?
 
-## TOTP приложения
-
-### Authy — важные изменения 2024
-
-> **Authy Desktop закрыт с марта 2024.** Twilio прекратил поддержку desktop-приложений. Authy теперь работает **только на мобильных устройствах** (iOS/Android).
-
-> **Июнь 2024:** Утечка 33 млн телефонных номеров из Authy API. Номера могут использоваться для фишинга.
-
-**Особенности Authy:**
-- Encrypted backup в облаке Twilio
-- Backup password хранится только локально — Twilio не может восстановить
-- При восстановлении на новом устройстве: **24 часа ожидания** (security)
-- Multi-device OFF = безопаснее, но сложнее recovery
-
-### Альтернативы Authy
-
-| Приложение | Desktop | Mobile | Export seeds | Open Source | Cloud sync |
-|------------|---------|--------|--------------|-------------|------------|
-| Authy | ❌ EOL | ✅ | ❌ | ❌ | ✅ (Twilio) |
-| **2FAS** | ✅ browser | ✅ | ✅ | ✅ | ✅ (Google Drive) |
-| **Aegis** (Android) | ❌ | ✅ | ✅ | ✅ | Manual backup |
-| Raivo (iOS) | ❌ | ✅ | ✅ | ✅ | iCloud |
-| KeePassXC | ✅ | ❌ | ✅ | ✅ | Manual |
-| 1Password | ✅ | ✅ | ❌ | ❌ | ✅ (1Password) |
-
-**Рекомендация:** 2FAS или Aegis — open source, позволяют экспорт seeds.
-
----
-
-## Single Points of Failure (SPOF)
-
-| SPOF | Риск | Mitigation |
-|------|------|------------|
-| Archive password забыт | Потеря всех recovery данных | Passphrase (легче запомнить) |
-| Телефон потерян | Потеря TOTP + biometrics | Backup seeds в encrypted file |
-| Proton заблокирован | Потеря cloud backup | USB backup |
-| USB потерян/сломан | Потеря local backup | Proton backup |
-| TOTP app закрыт/сломан | Потеря 2FA | Seeds в encrypted file |
-| Multi-device OFF + потеря телефона | 24ч без TOTP | Backup codes / seeds |
-
----
-
-## Схема зависимостей
-
-```
-                    ┌─────────────────┐
-                    │ Archive Password│ ← В ГОЛОВЕ (критичен!)
-                    │   = Proton pwd  │
-                    └────────┬────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              ▼              ▼              ▼
-        ┌─────────┐   ┌───────────┐   ┌─────────────┐
-        │   USB   │   │  Proton   │   │   Proton    │
-        │ (дома)  │   │   Drive   │   │    Mail     │
-        └────┬────┘   └─────┬─────┘   └──────┬──────┘
-             │              │                │
-             └──────┬───────┘                │
-                    ▼                        │
-          ┌─────────────────┐                │
-          │ Encrypted File  │                │
-          │ ├─ Keeper phrase│                │
-          │ ├─ Gmail codes  │                │
-          │ ├─ TOTP seeds   │ ← КРИТИЧНО     │
-          │ └─ Proton 2FA   │                │
-          └────────┬────────┘                │
-                   │                         │
-        ┌──────────┼──────────┐              │
-        ▼          ▼          ▼              ▼
-    ┌───────┐  ┌───────┐  ┌───────┐    ┌──────────┐
-    │Keeper │  │ Gmail │  │ TOTP  │    │  Gmail   │
-    │recover│  │backup │  │restore│    │ recovery │
-    │       │  │ codes │  │       │    │  email   │
-    └───────┘  └───────┘  └───────┘    └──────────┘
-```
+| Потерял | Path 1 (pwd+key) | Path 2 (codes) | Path 3 (email) | Path 4 (phone) | Результат |
+|---------|------------------|----------------|----------------|----------------|-----------|
+| Забыл Gmail pwd | ❌ | ❌ | ✅ | ✅ | OK |
+| Потерял оба YubiKey | ✅ TOTP | ✅ | ✅ | ✅ | OK |
+| Забыл Archive pwd | ✅ | ❌ | ❌ | ✅ | OK |
+| Потерял телефон+SIM | ✅ | ✅ | ✅ | ❌ | OK |
 
 ---
 
@@ -199,70 +140,80 @@ CONVENIENCE: Biometrics
 ### Сценарий 1: Забыл Keeper master password
 
 ```
-ВАРИАНТ A (есть телефон):
-1. Телефон с biometrics → Settings > Reset Master Password → DONE
+ВАРИАНТ A — есть телефон с Keeper:
+1. Открыть Keeper → биометрия (Face ID / отпечаток)
+2. Settings → Reset Master Password
+3. Создать новый master password → DONE
 
-ВАРИАНТ B (нет телефона):
-1. USB или Proton → Decrypt file → Recovery phrase
-2. Keeper: Forgot Password → Recovery phrase + email verification
-3. 2FA: backup codes или seeds из файла → DONE
+ВАРИАНТ B — нет телефона:
+1. USB или Proton Drive → скачать encrypted file
+2. Расшифровать (Archive pwd) → получить recovery phrase
+3. Keeper → Forgot Password → ввести recovery phrase
+4. Подтвердить email + 2FA → DONE
 ```
 
-### Сценарий 2: Потерял телефон (TOTP + biometrics)
+### Сценарий 2: Забыл Gmail password
 
 ```
-1. Новый телефон → Установить TOTP app (2FAS/Aegis/Authy)
-2. USB или Proton → Decrypt file → TOTP seeds
-3. Импортировать seeds в новый TOTP app → DONE
-4. Теперь есть 2FA для входа в Keeper и Gmail
+ВАРИАНТ A — recovery phone:
+1. Gmail → Forgot password
+2. Google отправит код на recovery phone
+3. Ввести код → создать новый пароль → DONE
 
-⚠️ Если используешь Authy без seeds:
-   - authy.com/phones/reset → 24 часа ожидания
-   - Backup password из encrypted file
+ВАРИАНТ B — recovery email:
+1. Gmail → Forgot password → Try another way
+2. Google отправит код на Proton Mail
+3. Войти в Proton (Archive pwd) → получить код
+4. Ввести код → создать новый пароль → DONE
+
+ВАРИАНТ C — backup codes:
+1. Gmail → войти с паролем → нужен 2FA
+2. Try another way → Enter backup code
+3. USB/Proton → encrypted file → backup codes
+4. Ввести код → DONE
 ```
 
-### Сценарий 3: Потерял YubiKey
+### Сценарий 3: Потерял телефон (YubiKey + TOTP + biometrics)
 
 ```
-1. Keeper: вход через backup TOTP → DONE
-2. Gmail: вход через backup TOTP или backup codes → DONE
-3. Удалить потерянный ключ из настроек обоих сервисов
-4. (Опционально) Добавить новый YubiKey
+1. Есть backup YubiKey дома? → использовать его → DONE
+
+2. Нет backup YubiKey?
+   ├─ Gmail: backup codes из encrypted file
+   ├─ Keeper: recovery phrase из encrypted file
+   └─ Новый телефон → восстановить TOTP из seeds в файле
 ```
 
-### Сценарий 4: Забыл Gmail password
+### Сценарий 4: Потерял YubiKey (оба)
 
 ```
-ВАРИАНТ A (есть 2FA):
-1. Gmail: Forgot password → Recovery email (Proton)
-2. Или: Recovery phone (SMS/call)
-3. 3-5 дней верификации → новый пароль → DONE
-
-ВАРИАНТ B (нет 2FA device):
-1. Gmail: Forgot password + Try another way
-2. Backup codes из encrypted file → DONE
+1. TOTP app на телефоне работает? → использовать TOTP → DONE
+2. Нет TOTP? → backup codes / recovery phrase из encrypted file
+3. После восстановления доступа:
+   └─ Купить новые YubiKey → настроить заново
 ```
 
-### Сценарий 5: Забыл Archive password (WORST CASE)
+### Сценарий 5: Забыл Archive password (CRITICAL)
 
 ```
-1. USB и Proton бесполезны (encrypted AES-256)
-2. ЕСЛИ есть телефон с Keeper biometrics:
-   → Войти в Keeper → сгенерировать новый recovery phrase
-   → Войти в Gmail → сгенерировать новые backup codes
-   → Создать новый encrypted file с новым паролем
-3. ЕСЛИ нет телефона:
-   → Gmail: recovery через phone/email (если настроены)
-   → Keeper: ПОТЕРЯ ДАННЫХ (zero-knowledge)
+1. Gmail: recovery phone работает (не нужен Archive pwd) → OK
+2. Keeper: biometrics работает (не нужен Archive pwd) → OK
+3. После входа:
+   ├─ Keeper: сгенерировать НОВЫЙ recovery phrase
+   ├─ Gmail: сгенерировать НОВЫЕ backup codes
+   ├─ Создать НОВЫЙ encrypted file с НОВЫМ Archive pwd
+   └─ Сохранить на USB + Proton Drive
 ```
 
 ### Сценарий 6: Пожар/кража (потеря USB + телефона)
 
 ```
-1. Любое устройство → Proton Mail login
-2. Proton Drive → Download encrypted file
-3. Decrypt → recovery данные
-4. Восстановить Keeper и Gmail по сценариям выше
+1. Любое устройство → proton.me → войти (Archive pwd)
+2. Proton Drive → скачать encrypted file
+3. Расшифровать → recovery данные
+4. Восстановить доступ к Gmail и Keeper
+5. Новый телефон → настроить TOTP из seeds
+6. Купить новые YubiKey
 ```
 
 ---
@@ -288,107 +239,165 @@ Backup Codes (8 цифр, одноразовые):
 12345678
 23456789
 34567890
-... (всего 10 кодов)
+45678901
+56789012
+67890123
+78901234
+89012345
+90123456
+01234567
 
 ========================================
-TOTP SEEDS (КРИТИЧНО!)
+TOTP SEEDS
 ========================================
-Keeper:  JBSWY3DPEHPK3PXP...
-Gmail:   GEZDGNBVGY3TQOJQ...
-Proton:  MFRGGZDFMY2TGNZR...
+Формат для импорта в любой TOTP app:
 
-Формат для импорта в 2FAS/Aegis:
-otpauth://totp/Keeper?secret=JBSWY3DPEHPK3PXP&issuer=Keeper
-otpauth://totp/Gmail?secret=GEZDGNBVGY3TQOJQ&issuer=Google
-otpauth://totp/Proton?secret=MFRGGZDFMY2TGNZR&issuer=Proton
+Proton:
+otpauth://totp/Proton:user@proton.me?secret=XXXXXXXX&issuer=Proton
+
+Keeper (если не используется YubiKey как primary):
+otpauth://totp/Keeper:user@email.com?secret=XXXXXXXX&issuer=Keeper
 
 ========================================
-PROTON
+PROTON (напоминание)
 ========================================
 Email: your-email@proton.me
-Password: [same as archive - это напоминание]
-2FA seed: MFRGGZDFMY2TGNZR...
-
-========================================
-AUTHY (если используется)
-========================================
-Backup Password: [password]
-Phone number: +1234567890
+Password: = Archive password (тот же)
 ```
 
 ---
 
-## Безопасность схемы
+## TOTP: YubiKey vs App
+
+### Когда использовать YubiKey TOTP
+
+```
+Основной способ:
+├─ Gmail: FIDO2 (YubiKey) — phishing-resistant
+├─ Keeper: FIDO2 (YubiKey) — phishing-resistant
+└─ Proton: TOTP (YubiKey) — Proton не поддерживает FIDO2 для логина
+```
+
+### Когда использовать TOTP App (2FAS/Aegis)
+
+```
+Backup от YubiKey:
+├─ Если потерял оба YubiKey
+├─ Если YubiKey не работает с устройством
+└─ Seeds хранятся в encrypted file для восстановления
+```
+
+### Рекомендуемый TOTP App
+
+| App | Platform | Export seeds | Open Source |
+|-----|----------|--------------|-------------|
+| **2FAS** | iOS/Android/Browser | ✅ | ✅ |
+| **Aegis** | Android | ✅ | ✅ |
+| Raivo | iOS | ✅ | ✅ |
+
+**Authy не рекомендуется:**
+- Desktop закрыт (март 2024)
+- Нельзя экспортировать seeds
+- Утечка 33M номеров (июнь 2024)
+
+---
+
+## Безопасность
 
 ### Защита от угроз
 
 | Угроза | Защита |
 |--------|--------|
-| Взлом Keeper серверов | Zero-knowledge, AES-256 |
-| Взлом Proton | Файл encrypted (AES-256) |
-| Кража USB | Файл encrypted |
-| SIM-swap | Нет SMS 2FA для критичных сервисов |
-| Потеря телефона | USB + Proton backup + seeds |
-| Потеря USB | Proton backup |
-| Потеря Proton | USB backup |
-| TOTP app закрылся | Seeds в encrypted file |
+| Фишинг | YubiKey FIDO2 — immune to phishing |
+| Взлом Keeper/Gmail серверов | Zero-knowledge (Keeper), E2E (нет паролей на сервере) |
+| Взлом Proton | Encrypted file защищён AES-256 |
+| Кража USB | Encrypted file защищён AES-256 |
+| SIM-swap | Нет SMS для 2FA, только YubiKey/TOTP |
+| Потеря телефона | YubiKey + encrypted file backup |
+| Потеря YubiKey | Backup YubiKey + TOTP seeds |
+| Пожар дома | Proton Drive cloud backup |
 
-### Оставшиеся риски
+### Single Points of Failure
 
-| Риск | Вероятность | Impact | Mitigation |
-|------|-------------|--------|------------|
-| Забыть archive password | Низкая | Критичный | Passphrase + регулярное использование |
-| Пожар + Proton down | Очень низкая | Критичный | Второй USB у родственника |
-| Компрометация Proton | Низкая | Низкий | Файл зашифрован |
-| Физический доступ к USB | Низкая | Низкий | Файл зашифрован |
+| SPOF | Mitigation |
+|------|------------|
+| Archive password | Recovery phone + biometrics работают без него |
+| Оба YubiKey | TOTP app + backup codes |
+| Телефон | YubiKey + encrypted file |
+| Proton down | USB backup дома |
+| USB сломался | Proton Drive backup |
 
 ---
 
 ## Чеклист настройки
 
-### Proton Mail
-- [ ] Создать аккаунт Proton Mail
+### 1. Proton Mail + Drive
+- [ ] Создать аккаунт proton.me
 - [ ] Пароль = Archive password (запомнить!)
-- [ ] Включить 2FA (TOTP)
-- [ ] **Сохранить TOTP seed в encrypted file**
-- [ ] Создать Proton Drive
+- [ ] Включить 2FA → сохранить TOTP seed
+- [ ] Proton Drive создаётся автоматически
 
-### TOTP App (2FAS / Aegis рекомендуется)
-- [ ] Установить 2FAS или Aegis
-- [ ] Включить encrypted backup (опционально)
-- [ ] Добавить TOTP: Keeper, Gmail, Proton
-- [ ] **Экспортировать seeds → сохранить в encrypted file**
+### 2. YubiKey (x2)
+- [ ] Купить 2x YubiKey 5 NFC (~$110)
+- [ ] Настроить primary YubiKey:
+  - [ ] Gmail: Security → 2-Step Verification → Security Key
+  - [ ] Keeper: Settings → Security → Security Key
+  - [ ] Добавить TOTP для Proton (Yubico Authenticator)
+- [ ] Настроить backup YubiKey (те же шаги, тот же момент!)
+- [ ] Primary носить с собой, Backup хранить дома
 
-### Gmail
-- [ ] Recovery email: Proton Mail
+### 3. Gmail
+- [ ] Recovery email: Proton Mail адрес
 - [ ] Recovery phone: твой номер
-- [ ] 2FA: TOTP + Passkey
-- [ ] Сгенерировать Backup Codes (10 шт)
-- [ ] **Сохранить backup codes в encrypted file**
-- [ ] **Сохранить TOTP seed в encrypted file**
-- [ ] (Опционально) YubiKey
+- [ ] 2-Step Verification:
+  - [ ] Security Key (YubiKey) — primary
+  - [ ] Passkey на телефоне — backup
+- [ ] Сгенерировать Backup Codes (10 шт) → сохранить!
 
-### Keeper
-- [ ] Включить 2FA: TOTP
-- [ ] (Опционально) YubiKey
-- [ ] Сгенерировать Recovery Phrase (24 слова)
-- [ ] **Сохранить phrase в encrypted file**
-- [ ] **Сохранить TOTP seed в encrypted file**
-- [ ] Включить Biometrics на телефоне
+### 4. Keeper
+- [ ] Security Key (YubiKey) — primary 2FA
+- [ ] TOTP — backup 2FA (если нужно)
+- [ ] Recovery Phrase → сгенерировать и сохранить!
+- [ ] Biometrics на телефоне — включить
 
-### Encrypted File
-- [ ] Создать recovery.txt со всеми данными
-- [ ] Зашифровать: `7z a -t7z -m0=lzma2 -mx=9 -mfb=64 -md=32m -ms=on -mhe=on -p recovery.7z recovery.txt`
-- [ ] Безопасно удалить recovery.txt
-- [ ] Копия 1: USB дома
-- [ ] Копия 2: Proton Drive
-- [ ] **Проверить расшифровку на обеих копиях**
+### 5. Encrypted File
+- [ ] Создать `recovery.txt`:
+  - [ ] Keeper recovery phrase
+  - [ ] Gmail backup codes
+  - [ ] TOTP seeds (otpauth:// URLs)
+- [ ] Зашифровать:
+  ```bash
+  7z a -t7z -m0=lzma2 -mx=9 -mhe=on -p recovery.7z recovery.txt
+  ```
+- [ ] Безопасно удалить `recovery.txt`:
+  ```bash
+  # Linux/macOS:
+  shred -u recovery.txt
+  # Windows:
+  cipher /w:. && del recovery.txt
+  ```
+- [ ] Копия на USB
+- [ ] Копия на Proton Drive
+- [ ] **Проверить:** расшифровать обе копии и убедиться что данные читаемы
 
-### Тестирование (раз в 6 месяцев)
+### 6. Тестирование (раз в 6 месяцев)
 - [ ] Расшифровать файл с USB
-- [ ] Убедиться что все данные читаемы
-- [ ] Проверить что backup codes не использованы
-- [ ] Обновить если добавились новые сервисы
+- [ ] Проверить что backup codes актуальны (не использованы)
+- [ ] Проверить что recovery phrase работает (не тестировать реально, просто убедиться что читаем)
+- [ ] Swap YubiKey — использовать backup неделю, убедиться что работает
+
+---
+
+## Hardware: сравнение ключей
+
+| Ключ | TOTP | FIDO2 | Passkeys | Цена | Вердикт |
+|------|------|-------|----------|------|---------|
+| **YubiKey 5 NFC** | ✅ 32-64 | ✅ | 25 | $55 | **Лучший выбор** |
+| YubiKey 5C NFC | ✅ 32-64 | ✅ | 25 | $55 | Для USB-C only |
+| Google Titan | ❌ | ✅ | 250 | $30 | Нет TOTP! |
+| Thetis Pro | ❌ | ✅ | 50 | $40 | Нет TOTP! |
+
+**Для TOTP + FIDO2:** только YubiKey 5 series.
 
 ---
 
@@ -403,10 +412,13 @@ Phone number: +1234567890
 - [Backup Codes](https://support.google.com/accounts/answer/1187538)
 - [Account Recovery](https://support.google.com/accounts/answer/7682439)
 - [Passkeys](https://support.google.com/accounts/answer/13548313)
-- [Google Password Manager Passkeys (Sept 2024)](https://blog.google/technology/safety-security/google-password-manager-passkeys-update-september-2024/)
 
-### Authy / TOTP
-- [Authy: Restoring Access](https://www.authy.com/phones/reset/)
-- [Authy Desktop EOL (March 2024)](https://www.twilio.com/en-us/changelog/end-of-life--eol--of-twilio-authy-desktop-apps)
+### YubiKey
+- [YubiKey 5 Series](https://www.yubico.com/products/yubikey-5-overview/)
+- [Backup Strategy](https://www.yubico.com/blog/backup-recovery-plan/)
+- [TOTP Credentials Backup](https://docs.yubico.com/yesdk/users-manual/application-oath/oath-backup-credentials.html)
+
+### TOTP Apps
 - [2FAS](https://2fas.com/)
 - [Aegis Authenticator](https://getaegis.app/)
+- [Authy Desktop EOL](https://www.twilio.com/en-us/changelog/end-of-life--eol--of-twilio-authy-desktop-apps)
