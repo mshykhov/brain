@@ -1,217 +1,98 @@
-# Auth0 OIDC Integration
+# Auth0 OIDC Integration for Vault
 
 ## 1. Create Auth0 Application
 
 В Auth0 Dashboard:
 
 1. **Applications** → **Create Application**
-2. Name: `Teleport`
+2. Name: `Vault`
 3. Type: **Regular Web Application**
 4. Settings:
-   - **Allowed Callback URLs**: `https://teleport.trout-paradise.ts.net/v1/webapi/oidc/callback`
-   - **Allowed Logout URLs**: `https://teleport.trout-paradise.ts.net`
-   - **Allowed Web Origins**: не требуется (server-side OIDC flow)
+   - **Allowed Callback URLs**: `https://vault.trout-paradise.ts.net/ui/vault/auth/oidc/oidc/callback`
+   - **Allowed Logout URLs**: `https://vault.trout-paradise.ts.net`
 5. Save и скопируй:
-   - Client ID
-   - Client Secret
-   - Domain
+   - Client ID → `infrastructure/apps/values.yaml`
+   - Client Secret → Doppler
 
-## 2. RBAC Structure (Traits-based)
+## 2. Auth0 Roles
 
-Используем compositional подход с traits для масштабируемости.
+**User Management** → **Roles** → Create:
 
-### Auth0 Roles
+| Name | Vault Policy | Описание |
+|------|--------------|----------|
+| `db-admin` | pki-admin | Full PKI access |
+| `db-readonly` | pki-readonly | Issue readonly certs |
+| `db-readwrite` | pki-readwrite | Issue readwrite certs |
 
-Создать в **User Management** → **Roles**:
-
-#### Permission roles (выбирается один):
-| Name | Description |
-|------|-------------|
-| `db-readonly` | Database read-only access |
-| `db-readwrite` | Database read-write access |
-
-#### App roles (выбираются несколько):
-| Name | Description |
-|------|-------------|
-| `db-app-blackpoint` | Access to Blackpoint databases |
-| `db-app-notifier` | Access to Notifier databases |
-
-#### Environment roles (выбираются несколько):
-| Name | Description |
-|------|-------------|
-| `db-env-dev` | Access to dev environment |
-| `db-env-prd` | Access to prd environment |
-
-#### Admin (override):
-| Name | Description |
-|------|-------------|
-| `db-admin` | Full database admin access |
-
-### Примеры назначений
-
-| Пользователь | Роли | Доступ |
-|--------------|------|--------|
-| Junior Dev | `db-readonly` + `db-app-blackpoint` + `db-env-dev` | Читает blackpoint-dev |
-| Backend Dev | `db-readwrite` + `db-app-blackpoint` + `db-app-notifier` + `db-env-dev` | Пишет в blackpoint-dev, notifier-dev |
-| Senior Dev | `db-readonly` + `db-app-blackpoint` + `db-env-dev` + `db-env-prd` | Читает blackpoint в dev и prd |
-| DBA/Admin | `db-admin` | Полный доступ везде |
-
-### Масштабирование
-
-- Новое приложение = 1 новая роль (`db-app-newservice`)
-- 10 приложений = 15 ролей (вместо 41 при flat подходе)
-
-## 3. Auth0 Action for Traits
-
-Создаём Action для передачи ролей как traits в токен.
+## 3. Auth0 Action
 
 **Actions** → **Library** → **Build Custom** → **Post Login**
 
-Name: `Add Teleport Traits`
+Name: `Add Vault Roles`
 
 ```javascript
 exports.onExecutePostLogin = async (event, api) => {
-  const namespace = 'https://teleport';
+  const namespace = 'https://vault/roles';
 
-  if (!event.authorization || !event.authorization.roles) {
-    return;
+  if (event.authorization) {
+    const roles = event.authorization.roles || [];
+    api.idToken.setCustomClaim(namespace, roles);
+    api.accessToken.setCustomClaim(namespace, roles);
   }
-
-  const roles = event.authorization.roles;
-
-  // Parse roles using filter/map
-  const apps = roles
-    .filter(r => r.startsWith('db-app-'))
-    .map(r => r.replace('db-app-', ''));
-
-  const envs = roles
-    .filter(r => r.startsWith('db-env-'))
-    .map(r => r.replace('db-env-', ''));
-
-  const permission = roles.includes('db-readwrite') ? 'readwrite' : 'readonly';
-  const isAdmin = roles.includes('db-admin');
-
-  // Set claims
-  api.idToken.setCustomClaim(`${namespace}/apps`, apps);
-  api.idToken.setCustomClaim(`${namespace}/envs`, envs);
-  api.idToken.setCustomClaim(`${namespace}/permission`, permission);
-  api.idToken.setCustomClaim(`${namespace}/is_admin`, isAdmin);
-  api.idToken.setCustomClaim(`${namespace}/roles`, roles);
 };
 ```
 
-**Deploy** action и добавить в **Actions** → **Flows** → **Login**.
+**Deploy** и добавить в **Actions** → **Flows** → **Login**.
 
-## 4. Store Credentials in Doppler
+## 4. Store Credentials
 
-В Doppler project `shared`:
+### Doppler (shared)
 
 ```
-TELEPORT_OIDC_CLIENT_SECRET=<client_secret>
+VAULT_OIDC_CLIENT_SECRET=<client_secret>
 ```
 
-Client ID публичный, хранится в `global.teleport.oidcClientId`.
-
-## 5. Create ExternalSecret
-
-### 5.1 Add to global values
-
-`infrastructure/apps/values.yaml`:
+### infrastructure/apps/values.yaml
 
 ```yaml
-global:
-  # ... other values ...
-  teleport:
-    oidcClientId: EiFjtNTcuZzCjpRABGSbea2TAuinVbyp  # Auth0 application client ID
+vault:
+  oidcClientId: Y8QpXWQDlKjhTUMaDvnkb5sbsufiHLyP
 ```
 
-### 5.2 Pass to credentials chart
+## 5. Vault Configuration
 
-`infrastructure/apps/templates/core/credentials.yaml`:
+vault-config chart автоматически создаёт:
+
+### External Groups
 
 ```yaml
-helm:
-  valuesObject:
-    global:
-      # ... other values ...
-      teleport:
-        oidcClientId: {{ .Values.global.teleport.oidcClientId }}
+externalGroups:
+  - name: db-admin
+    policies: [pki-admin]
+  - name: db-readonly
+    policies: [pki-readonly]
+  - name: db-readwrite
+    policies: [pki-readwrite]
 ```
 
-### 5.3 ExternalSecret
+Auth0 role → Vault external group → Vault policy
 
-`infrastructure/charts/credentials/templates/teleport-oidc.yaml`:
+### OIDC Role
 
 ```yaml
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: teleport-oidc
-  namespace: teleport
-spec:
-  refreshInterval: 5m
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: doppler-shared
-  target:
-    name: teleport-oidc
-    creationPolicy: Owner
-    template:
-      data:
-        client-id: {{ .Values.global.teleport.oidcClientId | quote }}
-        client-secret: "{{ "{{" }} .clientSecret {{ "}}" }}"
-  data:
-    - secretKey: clientSecret
-      remoteRef:
-        key: TELEPORT_OIDC_CLIENT_SECRET
+oidc:
+  role:
+    groupsClaim: "https://vault/roles"
 ```
 
-## 6. Create OIDC Connector
+## 6. Test SSO Login
 
-```bash
-AUTH_POD=$(kubectl get pod -n teleport -l app=teleport-cluster -o jsonpath='{.items[0].metadata.name}')
-
-kubectl exec -n teleport -it $AUTH_POD -- tctl create -f - <<'EOF'
-kind: oidc
-version: v3
-metadata:
-  name: auth0
-spec:
-  issuer_url: https://login.gaynance.com/
-  client_id: <CLIENT_ID>
-  client_secret: <CLIENT_SECRET>
-  redirect_url: https://teleport.trout-paradise.ts.net/v1/webapi/oidc/callback
-
-  # Map claims to traits
-  claims_to_roles:
-    # Admin gets full access
-    - claim: "https://teleport/is_admin"
-      value: "true"
-      roles:
-        - db-admin
-        - access
-
-    # All authenticated users get base access
-    - claim: "email_verified"
-      value: "true"
-      roles:
-        - db-user
-        - access
-EOF
-```
-
-## 7. Test SSO Login
-
-```bash
-# Login via SSO
-tsh login --proxy=teleport.trout-paradise.ts.net
-
-# Browser opens → Auth0 login → callback
-
-# Check status and roles
-tsh status
-```
+1. Открыть `https://vault.trout-paradise.ts.net`
+2. Method: **OIDC**
+3. Role: **default**
+4. Sign in → Auth0 redirect
+5. Проверить policies в Vault UI
 
 ## Next Steps
 
-→ [03-database-agent.md](03-database-agent.md)
+→ [03-cnpg-certificates.md](03-cnpg-certificates.md)
