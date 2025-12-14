@@ -1,53 +1,27 @@
 # Teleport Cluster Installation
 
-## 1. Add Helm Repository
+## 1. Overview
 
-```bash
-helm repo add teleport https://charts.releases.teleport.dev
-helm repo update
-```
+Teleport доступен через Tailscale Ingress с автоматическим TLS сертификатом.
+- URL: `https://teleport.trout-paradise.ts.net`
+- Internal-only доступ (более безопасно чем public)
 
-## 2. Create Namespace
+## 2. Helm Values
 
-```bash
-kubectl create namespace teleport
-kubectl label namespace teleport 'pod-security.kubernetes.io/enforce=baseline'
-```
-
-## 3. DNS Setup
-
-Создать DNS record в Cloudflare:
-- `teleport.gaynance.com` → Tailscale IP или LoadBalancer
-
-Или использовать Tailscale для internal-only доступа:
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: teleport-tailscale
-  namespace: teleport
-  annotations:
-    tailscale.com/expose: "true"
-    tailscale.com/hostname: "teleport"
-spec:
-  selector:
-    app: teleport-cluster
-  ports:
-    - port: 443
-      targetPort: 3080
-```
-
-## 4. Create Values File
-
-`infrastructure/charts/teleport-cluster/values.yaml`:
+`infrastructure/helm-values/core/teleport-cluster.yaml`:
 
 ```yaml
-clusterName: teleport.gaynance.com  # или teleport.trout-paradise.ts.net
+# Multiplex mode - single port for all protocols (SSH, gRPC, HTTPS)
 proxyListenerMode: multiplex
 
-# TLS - Let's Encrypt
-acme: true
-acmeEmail: your-email@example.com
+# Disable ACME - TLS handled by Tailscale Ingress
+acme: false
+
+# Persistence
+persistence:
+  enabled: true
+  storageClassName: longhorn
+  size: 5Gi
 
 # Resources
 resources:
@@ -58,38 +32,17 @@ resources:
     cpu: 500m
     memory: 512Mi
 
-# Persistence
-persistence:
-  enabled: true
-  storageClassName: longhorn
-  size: 10Gi
+# Service - ClusterIP (exposed via Tailscale Ingress)
+service:
+  type: ClusterIP
 
-# High Availability (optional for prod)
-highAvailability:
-  replicaCount: 1  # increase for prod
-  certManager:
-    enabled: false
-
-# Auth settings
-auth:
-  teleportConfig:
-    auth_service:
-      authentication:
-        type: oidc
-        connector_name: auth0
-        webauthn:
-          rp_id: teleport.gaynance.com
-
-# Proxy settings
-proxy:
-  teleportConfig:
-    proxy_service:
-      https_keypairs: []
+log:
+  level: INFO
 ```
 
-## 5. Install via ArgoCD
+## 3. ArgoCD Application
 
-`infrastructure/apps/templates/infrastructure/teleport.yaml`:
+`infrastructure/apps/templates/core/teleport.yaml`:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -97,73 +50,121 @@ kind: Application
 metadata:
   name: teleport-cluster
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: infrastructure
-  source:
-    repoURL: https://charts.releases.teleport.dev
-    chart: teleport-cluster
-    targetRevision: 18.5.1
-    helm:
-      valuesObject:
-        clusterName: teleport.trout-paradise.ts.net
-        proxyListenerMode: multiplex
-        acme: true
-        acmeEmail: your-email@example.com
-        persistence:
-          enabled: true
-          storageClassName: longhorn
-          size: 10Gi
+  sources:
+    - repoURL: https://charts.releases.teleport.dev
+      chart: teleport-cluster
+      targetRevision: "18.5.1"
+      helm:
+        valueFiles:
+          - $values/helm-values/core/teleport-cluster.yaml
+        valuesObject:
+          clusterName: teleport.{{ .Values.global.tailnet }}.ts.net
+          publicAddr:
+            - teleport.{{ .Values.global.tailnet }}.ts.net:443
+    - repoURL: {{ .Values.spec.source.repoURL }}
+      targetRevision: {{ .Values.spec.source.targetRevision }}
+      ref: values
   destination:
-    server: https://kubernetes.default.svc
+    server: {{ .Values.spec.destination.server }}
     namespace: teleport
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        tier: infrastructure
+        team: platform
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
 ```
 
-## 6. Verify Installation
+## 4. Tailscale Ingress (Direct)
+
+В `infrastructure/charts/protected-services/values.yaml`:
+
+```yaml
+teleport:
+  enabled: true
+  direct: true          # Direct Tailscale Ingress, bypasses nginx
+  namespace: teleport
+  backend:
+    name: teleport-cluster
+    port: 443
+```
+
+Template `infrastructure/charts/protected-services/templates/tailscale-direct.yaml`:
+
+```yaml
+{{- range $name, $service := .Values.services }}
+{{- if and $service.enabled $service.direct }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}-tailscale
+  namespace: {{ $service.namespace }}
+  annotations:
+    tailscale.com/proxy-group: ingress-proxies
+spec:
+  ingressClassName: tailscale
+  tls:
+    - hosts:
+        - {{ $name }}
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $service.backend.name }}
+                port:
+                  number: {{ $service.backend.port }}
+{{- end }}
+{{- end }}
+```
+
+## 5. Verify Installation
 
 ```bash
+# Check pods
 kubectl get pods -n teleport
-kubectl get svc -n teleport
 
-# Check logs
-kubectl logs -n teleport -l app=teleport-cluster -f
+# Check ingress
+kubectl get ingress -n teleport
+
+# Check Tailscale
+kubectl get ingress teleport-tailscale -n teleport -o yaml
+
+# Access
+https://teleport.trout-paradise.ts.net
 ```
 
-## 7. Create Initial Admin User
+## 6. Create Initial Admin User (Optional)
+
+До настройки SSO можно создать локального админа:
 
 ```bash
-# Get auth pod
 AUTH_POD=$(kubectl get pod -n teleport -l app=teleport-cluster -o jsonpath='{.items[0].metadata.name}')
 
-# Create admin user (temporary, before SSO)
+# Create admin user
 kubectl exec -n teleport -it $AUTH_POD -- tctl users add admin --roles=editor,access,auditor
 
 # Follow the link to set password
-```
-
-## 8. Install tsh Client
-
-```bash
-# macOS
-brew install teleport
-
-# Windows (via scoop)
-scoop bucket add extras
-scoop install teleport
-
-# Or download from https://goteleport.com/download/
-```
-
-## 9. Test Connection
-
-```bash
-tsh login --proxy=teleport.trout-paradise.ts.net --user=admin
-tsh status
 ```
 
 ## Next Steps

@@ -10,46 +10,106 @@
 4. Settings:
    - **Allowed Callback URLs**: `https://teleport.trout-paradise.ts.net/v1/webapi/oidc/callback`
    - **Allowed Logout URLs**: `https://teleport.trout-paradise.ts.net`
+   - **Allowed Web Origins**: не требуется (server-side OIDC flow)
 5. Save и скопируй:
    - Client ID
    - Client Secret
    - Domain
 
-## 2. Configure Auth0 Groups
+## 2. RBAC Structure (Traits-based)
 
-### Enable Authorization Extension (если нужны группы)
+Используем compositional подход с traits для масштабируемости.
 
-1. **Extensions** → Install **Authorization**
-2. Создай группы:
-   - `db-readonly` - только чтение
-   - `db-admin` - полный доступ
-3. Назначь пользователей в группы
+### Auth0 Roles
 
-### Или используй Auth0 Organizations/Roles
+Создать в **User Management** → **Roles**:
 
-В **User Management** → **Roles**:
-- `db-readonly`
-- `db-admin`
+#### Permission roles (выбирается один):
+| Name | Description |
+|------|-------------|
+| `db-readonly` | Database read-only access |
+| `db-readwrite` | Database read-write access |
 
-## 3. Add Groups to Token
+#### App roles (выбираются несколько):
+| Name | Description |
+|------|-------------|
+| `db-app-blackpoint` | Access to Blackpoint databases |
+| `db-app-notifier` | Access to Notifier databases |
 
-В **Auth Pipeline** → **Rules** или **Actions**:
+#### Environment roles (выбираются несколько):
+| Name | Description |
+|------|-------------|
+| `db-env-dev` | Access to dev environment |
+| `db-env-prd` | Access to prd environment |
+
+#### Admin (override):
+| Name | Description |
+|------|-------------|
+| `db-admin` | Full database admin access |
+
+### Примеры назначений
+
+| Пользователь | Роли | Доступ |
+|--------------|------|--------|
+| Junior Dev | `db-readonly` + `db-app-blackpoint` + `db-env-dev` | Читает blackpoint-dev |
+| Backend Dev | `db-readwrite` + `db-app-blackpoint` + `db-app-notifier` + `db-env-dev` | Пишет в blackpoint-dev, notifier-dev |
+| Senior Dev | `db-readonly` + `db-app-blackpoint` + `db-env-dev` + `db-env-prd` | Читает blackpoint в dev и prd |
+| DBA/Admin | `db-admin` | Полный доступ везде |
+
+### Масштабирование
+
+- Новое приложение = 1 новая роль (`db-app-newservice`)
+- 10 приложений = 15 ролей (вместо 41 при flat подходе)
+
+## 3. Auth0 Action for Traits
+
+Создаём Action для передачи ролей как traits в токен.
+
+**Actions** → **Library** → **Build Custom** → **Post Login**
+
+Name: `Add Teleport Traits`
 
 ```javascript
-// Action: Add groups to token
 exports.onExecutePostLogin = async (event, api) => {
   const namespace = 'https://teleport/';
+  const roles = event.authorization?.roles || [];
 
-  if (event.authorization) {
-    api.idToken.setCustomClaim(namespace + 'groups', event.authorization.roles);
-    api.accessToken.setCustomClaim(namespace + 'groups', event.authorization.roles);
+  // Parse roles into traits
+  const traits = {
+    apps: [],
+    envs: [],
+    permission: 'readonly',  // default
+    isAdmin: false
+  };
+
+  for (const role of roles) {
+    if (role === 'db-admin') {
+      traits.isAdmin = true;
+    } else if (role === 'db-readwrite') {
+      traits.permission = 'readwrite';
+    } else if (role === 'db-readonly') {
+      traits.permission = 'readonly';
+    } else if (role.startsWith('db-app-')) {
+      traits.apps.push(role.replace('db-app-', ''));
+    } else if (role.startsWith('db-env-')) {
+      traits.envs.push(role.replace('db-env-', ''));
+    }
   }
+
+  // Set claims
+  api.idToken.setCustomClaim(namespace + 'apps', traits.apps);
+  api.idToken.setCustomClaim(namespace + 'envs', traits.envs);
+  api.idToken.setCustomClaim(namespace + 'permission', traits.permission);
+  api.idToken.setCustomClaim(namespace + 'is_admin', traits.isAdmin);
+  api.idToken.setCustomClaim(namespace + 'roles', roles);
 };
 ```
 
+**Deploy** action и добавить в **Actions** → **Flows** → **Login**.
+
 ## 4. Store Credentials in Doppler
 
-В Doppler project `shared`:
+В Doppler project `infrastructure` (или `shared`):
 
 ```
 TELEPORT_OIDC_CLIENT_ID=<client_id>
@@ -58,7 +118,7 @@ TELEPORT_OIDC_CLIENT_SECRET=<client_secret>
 
 ## 5. Create ExternalSecret
 
-`infrastructure/charts/teleport-cluster/templates/external-secret.yaml`:
+`infrastructure/charts/teleport-secrets/templates/external-secret.yaml`:
 
 ```yaml
 apiVersion: external-secrets.io/v1
@@ -85,77 +145,47 @@ spec:
 
 ## 6. Create OIDC Connector
 
-```yaml
-# oidc-connector.yaml
-kind: oidc
-version: v3
-metadata:
-  name: auth0
-spec:
-  issuer_url: https://login.gaynance.com/
-  client_id: <from_secret>
-  client_secret: <from_secret>
-  redirect_url: https://teleport.trout-paradise.ts.net/v1/webapi/oidc/callback
-
-  # Map Auth0 groups to Teleport roles
-  claims_to_roles:
-    - claim: "https://teleport/groups"
-      value: "db-admin"
-      roles:
-        - db-admin
-        - access
-    - claim: "https://teleport/groups"
-      value: "db-readonly"
-      roles:
-        - db-readonly
-        - access
-
-  # Default role for all authenticated users
-  claims_to_roles:
-    - claim: "email_verified"
-      value: "true"
-      roles:
-        - access
-```
-
-## 7. Apply Connector
-
 ```bash
 AUTH_POD=$(kubectl get pod -n teleport -l app=teleport-cluster -o jsonpath='{.items[0].metadata.name}')
 
-# Create connector
-kubectl exec -n teleport -it $AUTH_POD -- tctl create -f - <<EOF
+kubectl exec -n teleport -it $AUTH_POD -- tctl create -f - <<'EOF'
 kind: oidc
 version: v3
 metadata:
   name: auth0
 spec:
   issuer_url: https://login.gaynance.com/
-  client_id: YOUR_CLIENT_ID
-  client_secret: YOUR_CLIENT_SECRET
+  client_id: <CLIENT_ID>
+  client_secret: <CLIENT_SECRET>
   redirect_url: https://teleport.trout-paradise.ts.net/v1/webapi/oidc/callback
+
+  # Map claims to traits
   claims_to_roles:
-    - claim: "https://teleport/groups"
-      value: "db-admin"
+    # Admin gets full access
+    - claim: "https://teleport/is_admin"
+      value: "true"
       roles:
         - db-admin
         - access
-    - claim: "https://teleport/groups"
-      value: "db-readonly"
+
+    # All authenticated users get base access
+    - claim: "email_verified"
+      value: "true"
       roles:
-        - db-readonly
+        - db-user
         - access
 EOF
 ```
 
-## 8. Test SSO Login
+## 7. Test SSO Login
 
 ```bash
 # Login via SSO
 tsh login --proxy=teleport.trout-paradise.ts.net
 
-# Should open browser with Auth0 login
-# After login, check status
+# Browser opens → Auth0 login → callback
+
+# Check status and roles
 tsh status
 ```
 

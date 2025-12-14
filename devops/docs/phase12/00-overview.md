@@ -45,5 +45,9 @@
 - [x] K8s cluster (k3s)
 - [x] CloudNativePG PostgreSQL clusters
 - [x] Auth0 tenant
-- [x] Tailscale operator
-- [ ] DNS record для Teleport (teleport.gaynance.com)
+- [x] Tailscale operator (with ProxyGroup `ingress-proxies`)
+
+## Access
+
+- URL: `https://teleport.trout-paradise.ts.net`
+- Internal-only через Tailscale (более безопасно чем public DNS)
