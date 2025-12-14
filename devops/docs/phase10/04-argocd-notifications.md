@@ -73,11 +73,12 @@ data:
       🔗 [View Details]({{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}?operation=true)
 
   # Pushover template (form-urlencoded, urlquery for escaping)
+  # Title format matches Alertmanager: "🚨 smhomelab: <app-name>"
   template.app-sync-failed-pushover: |
     webhook:
       pushover-critical:
         method: POST
-        body: user=YOUR_USER_KEY&priority=2&retry=60&expire=3600&sound=tugboat&title={{ .app.metadata.name | urlquery }}%20sync%20failed&message={{ if .app.status.operationState.message }}{{ .app.status.operationState.message | trunc 150 | urlquery }}{{ else }}Sync%20failed{{ end }}&url={{ .context.argocdUrl | urlquery }}%2Fapplications%2F{{ .app.metadata.name | urlquery }}
+        body: user=YOUR_USER_KEY&priority=2&retry=60&expire=3600&sound=tugboat&title=%F0%9F%9A%A8%20smhomelab%3A%20{{ .app.metadata.name | urlquery }}&message=Sync%20failed{{ if .app.status.operationState.message }}%3A%20{{ .app.status.operationState.message | trunc 150 | urlquery }}{{ end }}&url={{ .context.argocdUrl | urlquery }}%2Fapplications%2F{{ .app.metadata.name | urlquery }}
 
   template.app-health-degraded: |
     message: |
