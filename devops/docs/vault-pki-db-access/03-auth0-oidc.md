@@ -86,8 +86,17 @@ oidc:
     userClaim: "email"
     groupsClaim: "https://vault/roles"
     tokenTtl: "12h"
+    # Request email scope from Auth0 to include email claim
+    oidcScopes:
+      - "openid"
+      - "profile"
+      - "email"
     allowedRedirectUris:
       - "http://localhost:8250/oidc/callback"
+
+# UI Configuration - OIDC as default login method
+ui:
+  defaultAuthMethod: "oidc"
 
 externalGroups:
   - name: "db-admin"
@@ -100,6 +109,8 @@ externalGroups:
     policies:
       - "pki-readwrite"
 ```
+
+**Важно:** `oidcScopes` включает `email` scope - это нужно для получения email claim от Auth0.
 
 ArgoCD Application добавляет `discoveryUrl`, `clientId` и Tailscale callback URL.
 

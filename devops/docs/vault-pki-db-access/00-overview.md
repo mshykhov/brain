@@ -87,3 +87,32 @@ db-readwrite     →  pki-readwrite   →  db-readwrite  →  readwrite certs
 5. [05-database-config.md](05-database-config.md) - CNPG конфигурация
 6. [06-tailscale-expose.md](06-tailscale-expose.md) - Tailscale exposure
 7. [07-client-workflow.md](07-client-workflow.md) - Developer workflow
+
+## Quick Start
+
+```bash
+# 1. Login to Vault via Auth0
+export VAULT_ADDR="https://vault.trout-paradise.ts.net"
+vault login -method=oidc
+
+# 2. Get certificate
+vault write -format=json pki_int/issue/db-readonly \
+    common_name="$(whoami)@company.com" \
+    ttl="2190h" > cert.json
+
+# 3. Extract certificate files
+jq -r '.data.certificate' cert.json > ~/.pg/client.crt
+jq -r '.data.private_key' cert.json > ~/.pg/client.key
+jq -r '.data.ca_chain[0]' cert.json > ~/.pg/ca.crt
+chmod 600 ~/.pg/client.key
+
+# 4. Connect to database
+psql "host=blackpoint-api-dev.trout-paradise.ts.net \
+      port=5432 \
+      dbname=blackpoint \
+      user=$(whoami)@company.com \
+      sslmode=verify-full \
+      sslcert=$HOME/.pg/client.crt \
+      sslkey=$HOME/.pg/client.key \
+      sslrootcert=$HOME/.pg/ca.crt"
+```

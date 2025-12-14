@@ -1,190 +1,156 @@
-# Database Configuration for mTLS
+# Database Configuration for Certificate Auth
 
-## 1. CloudNativePG (PostgreSQL)
+## 1. Architecture
 
-### Export Vault CA
-
-```bash
-# Get CA from Vault
-kubectl exec -n vault vault-0 -- vault read -field=certificate pki_int/cert/ca > vault-ca.crt
-
-# Create secret in database namespace
-kubectl create secret generic vault-ca \
-    --from-file=ca.crt=vault-ca.crt \
-    -n blackpoint-api-dev
+```
+Vault PKI (Intermediate CA)
+        │
+        ├── vault-ca secret (ca.crt only)
+        │   └── Used by CNPG for client certificate verification
+        │
+        └── cnpg-replication-tls secret (tls.crt + tls.key)
+            └── Client cert for streaming_replica user
 ```
 
-### Update CNPG Cluster
+## 2. Secrets in Doppler (shared)
 
-`infrastructure/charts/cnpg-cluster/templates/cluster.yaml`:
+| Key | Description | Command |
+|-----|-------------|---------|
+| `VAULT_CA_CERT` | Intermediate CA certificate | `vault read -field=certificate pki_int/cert/ca` |
+| `CNPG_REPLICATION_TLS_CRT` | Replication certificate | See below |
+| `CNPG_REPLICATION_TLS_KEY` | Replication private key | See below |
+
+## 3. Generate Replication Certificate
+
+```bash
+# Connect to Vault with root token
+ssh ovh-ts "sudo kubectl exec -n vault vault-0 -- vault write -format=json pki_int/issue/db-admin common_name=streaming_replica ttl=2190h"
+
+# Copy from output:
+# - certificate → CNPG_REPLICATION_TLS_CRT
+# - private_key → CNPG_REPLICATION_TLS_KEY
+```
+
+## 4. ClusterExternalSecrets
+
+### vault-ca
+
+`infrastructure/charts/credentials/templates/vault-ca.yaml`:
 
 ```yaml
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
 metadata:
-  name: {{ .Release.Name }}-cluster
+  name: vault-ca
 spec:
-  instances: 2
+  externalSecretName: vault-ca
+  namespaceSelectors:
+    - matchLabels:
+        tier: application
+  refreshTime: 5m
+  externalSecretSpec:
+    secretStoreRef:
+      name: doppler-shared
+      kind: ClusterSecretStore
+    target:
+      name: vault-ca
+      template:
+        type: Opaque
+        data:
+          ca.crt: "{{ .caCert }}"
+    data:
+      - secretKey: caCert
+        remoteRef:
+          key: VAULT_CA_CERT
+```
+
+### cnpg-replication-tls
+
+`infrastructure/charts/credentials/templates/cnpg-replication-tls.yaml`:
+
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: cnpg-replication-tls
+spec:
+  externalSecretName: cnpg-replication-tls
+  namespaceSelectors:
+    - matchLabels:
+        tier: application
+  refreshTime: 5m
+  externalSecretSpec:
+    secretStoreRef:
+      name: doppler-shared
+      kind: ClusterSecretStore
+    target:
+      name: cnpg-replication-tls
+      template:
+        type: kubernetes.io/tls
+        data:
+          tls.crt: "{{ .tlsCrt }}"
+          tls.key: "{{ .tlsKey }}"
+    data:
+      - secretKey: tlsCrt
+        remoteRef:
+          key: CNPG_REPLICATION_TLS_CRT
+      - secretKey: tlsKey
+        remoteRef:
+          key: CNPG_REPLICATION_TLS_KEY
+```
+
+## 5. CNPG Cluster Configuration
+
+`infrastructure/helm-values/data/postgres-dev-defaults.yaml`:
+
+```yaml
+cluster:
+  # Certificate authentication with Vault CA
+  certificates:
+    clientCASecret: vault-ca
+    replicationTLSSecret: cnpg-replication-tls
 
   postgresql:
-    parameters:
-      ssl: "on"
-      ssl_ca_file: "/etc/ssl/vault/ca.crt"
-
+    # pg_hba.conf authentication rules
     pg_hba:
-      # Allow cert auth from Tailscale network
+      # Apps inside cluster (pod network) - password auth
+      - hostssl all all 10.42.0.0/16 scram-sha-256
+      # Developers via Tailscale - certificate auth
       - hostssl all all 100.64.0.0/10 cert
-      - hostssl all all 0.0.0.0/0 cert
-
-  # Mount Vault CA
-  projectedVolumeTemplate:
-    sources:
-      - secret:
-          name: vault-ca
-          items:
-            - key: ca.crt
-              path: vault/ca.crt
-
-  # Certificate configuration
-  certificates:
-    # Server cert (CNPG manages)
-    serverTLSSecret: {{ .Release.Name }}-server-tls
-    serverCASecret: {{ .Release.Name }}-server-ca
-
-    # Client CA (Vault CA for client auth)
-    clientCASecret: vault-ca
 ```
 
-### Create PostgreSQL Users
+## 6. Why replicationTLSSecret?
+
+По [документации CNPG](https://cloudnative-pg.io/documentation/current/certificates/):
+
+> If `replicationTLSSecret` is not defined, `ClientCASecret` must provide also `ca.key`
+
+Мы не хотим распространять private key CA, поэтому предоставляем готовый client cert для streaming_replica user.
+
+## 7. Verify Configuration
 
 ```bash
-# Connect to PostgreSQL
-kubectl exec -it -n blackpoint-api-dev blackpoint-api-dev-cluster-1 -- psql -U postgres
+# Check secrets are distributed
+ssh ovh-ts "sudo kubectl get secrets -A | grep -E 'vault-ca|cnpg-replication'"
 
--- Create user for readonly access (matches cert CN pattern)
-CREATE ROLE readonly_user WITH LOGIN;
-GRANT CONNECT ON DATABASE blackpoint TO readonly_user;
-GRANT USAGE ON SCHEMA public TO readonly_user;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly_user;
+# Check CNPG clusters status
+ssh ovh-ts "sudo kubectl get clusters.postgresql.cnpg.io -A"
 
--- Create user for readwrite access
-CREATE ROLE readwrite_user WITH LOGIN;
-GRANT CONNECT ON DATABASE blackpoint TO readwrite_user;
-GRANT USAGE ON SCHEMA public TO readwrite_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO readwrite_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO readwrite_user;
-
--- Create admin user
-CREATE ROLE admin_user WITH LOGIN SUPERUSER;
+# Should show: Cluster in healthy state
 ```
 
-### Configure pg_ident.conf (CN mapping)
+## 8. PostgreSQL Users
 
-```yaml
-# In CNPG cluster spec
-postgresql:
-  pg_ident.conf: |
-    # Map certificate CN to PostgreSQL user
-    # MAPNAME    SYSTEM-USERNAME           PG-USERNAME
-    vault_users  /^(.*)@.*$/               readonly_user
-    vault_admin  admin@company.com         admin_user
-```
-
-## 2. MySQL/MariaDB
-
-### Configure MySQL for mTLS
+Users для certificate auth создаются без password. CN сертификата = username.
 
 ```sql
--- Require SSL with client certificate
-ALTER USER 'readonly_user'@'%' REQUIRE X509;
-ALTER USER 'readwrite_user'@'%' REQUIRE X509;
-ALTER USER 'admin_user'@'%' REQUIRE X509;
+-- User for readonly access (CN: readonly@domain.com maps to this)
+CREATE ROLE readonly_user WITH LOGIN;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly_user;
 
--- Or require specific issuer
-ALTER USER 'readonly_user'@'%'
-  REQUIRE ISSUER '/CN=smhomelab-intermediate-ca';
-```
-
-### MySQL Configuration
-
-```ini
-# my.cnf
-[mysqld]
-ssl-ca=/etc/mysql/ssl/ca.crt
-ssl-cert=/etc/mysql/ssl/server.crt
-ssl-key=/etc/mysql/ssl/server.key
-require_secure_transport=ON
-```
-
-## 3. MongoDB
-
-### Configure MongoDB for mTLS
-
-```yaml
-# mongod.conf
-net:
-  ssl:
-    mode: requireSSL
-    PEMKeyFile: /etc/ssl/mongodb.pem
-    CAFile: /etc/ssl/vault-ca.crt
-    allowConnectionsWithoutCertificates: false
-
-security:
-  authorization: enabled
-```
-
-### Create MongoDB Users
-
-```javascript
-db.createUser({
-  user: "readonly_user",
-  roles: [{ role: "read", db: "mydb" }]
-});
-
-db.createUser({
-  user: "readwrite_user",
-  roles: [{ role: "readWrite", db: "mydb" }]
-});
-```
-
-## 4. Redis
-
-### Configure Redis for mTLS
-
-```conf
-# redis.conf
-tls-port 6379
-port 0
-tls-cert-file /etc/ssl/redis.crt
-tls-key-file /etc/ssl/redis.key
-tls-ca-cert-file /etc/ssl/vault-ca.crt
-tls-auth-clients yes
-```
-
-## 5. Verify Database mTLS
-
-### Test PostgreSQL Connection
-
-```bash
-# Get certificate from Vault
-vault write -format=json pki_int/issue/db-readonly \
-    common_name="test@company.com" \
-    ttl="1h" > cert.json
-
-jq -r '.data.certificate' cert.json > client.crt
-jq -r '.data.private_key' cert.json > client.key
-jq -r '.data.ca_chain[0]' cert.json > ca.crt
-
-# Test connection
-psql "host=blackpoint-api-dev.trout-paradise.ts.net \
-      port=5432 \
-      dbname=blackpoint \
-      user=readonly_user \
-      sslmode=verify-full \
-      sslcert=client.crt \
-      sslkey=client.key \
-      sslrootcert=ca.crt"
+-- User for readwrite access
+CREATE ROLE readwrite_user WITH LOGIN;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO readwrite_user;
 ```
 
 ## Next Steps
