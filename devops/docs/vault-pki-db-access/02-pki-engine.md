@@ -1,183 +1,150 @@
-# PKI Engine Configuration
+# PKI Engine Configuration (GitOps)
 
-## 1. Enable PKI Secrets Engine
+PKI Engine настраивается автоматически через `vault-config` Helm chart.
 
-```bash
-VAULT_POD="vault-0"
+## 1. ArgoCD Application
 
-# Enable root PKI (for CA)
-kubectl exec -n vault $VAULT_POD -- vault secrets enable -path=pki pki
+`infrastructure/apps/templates/core/vault-config.yaml`:
 
-# Set max TTL to 10 years for root CA
-kubectl exec -n vault $VAULT_POD -- vault secrets tune -max-lease-ttl=87600h pki
-
-# Enable intermediate PKI (for issuing certs)
-kubectl exec -n vault $VAULT_POD -- vault secrets enable -path=pki_int pki
-
-# Set max TTL to 5 years for intermediate
-kubectl exec -n vault $VAULT_POD -- vault secrets tune -max-lease-ttl=43800h pki_int
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"  # After Vault (wave 5)
+spec:
+  project: infrastructure
+  source:
+    repoURL: git@github.com:mshykhov/smhomelab-infrastructure.git
+    targetRevision: master
+    path: charts/vault-config
+    helm:
+      valuesObject:
+        oidc:
+          enabled: true
+          discoveryUrl: "https://login.gaynance.com/"
+          clientId: "Y8QpXWQDlKjhTUMaDvnkb5sbsufiHLyP"
+        tailnet: trout-paradise
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault
 ```
 
-## 2. Generate Root CA
+## 2. Vault Config Values
 
-```bash
-# Generate root CA certificate (10 years)
-kubectl exec -n vault $VAULT_POD -- vault write -field=certificate pki/root/generate/internal \
-    common_name="smhomelab-root-ca" \
-    issuer_name="root-2024" \
-    ttl=87600h > root_ca.crt
+`infrastructure/charts/vault-config/values.yaml`:
 
-# Configure CA and CRL URLs
-kubectl exec -n vault $VAULT_POD -- vault write pki/config/urls \
-    issuing_certificates="https://vault.trout-paradise.ts.net/v1/pki/ca" \
-    crl_distribution_points="https://vault.trout-paradise.ts.net/v1/pki/crl"
+```yaml
+vault:
+  address: "http://vault.vault.svc.cluster.local:8200"
+
+pki:
+  root:
+    commonName: "smhomelab-root-ca"
+    ttl: "87600h"  # 10 years
+
+  intermediate:
+    commonName: "smhomelab-intermediate-ca"
+    ttl: "43800h"  # 5 years
+
+  # PKI Roles for certificate issuance
+  roles:
+    db-readonly:
+      allow_any_name: true
+      enforce_hostnames: false
+      allow_ip_sans: false
+      server_flag: false
+      client_flag: true
+      max_ttl: "2190h"  # 3 months
+
+    db-readwrite:
+      allow_any_name: true
+      enforce_hostnames: false
+      allow_ip_sans: false
+      server_flag: false
+      client_flag: true
+      max_ttl: "2190h"
+
+    db-admin:
+      allow_any_name: true
+      enforce_hostnames: false
+      allow_ip_sans: false
+      server_flag: false
+      client_flag: true
+      max_ttl: "2190h"
 ```
 
-## 3. Generate Intermediate CA
+## 3. Configuration Job
 
-```bash
-# Generate CSR for intermediate
-kubectl exec -n vault $VAULT_POD -- vault write -format=json pki_int/intermediate/generate/internal \
-    common_name="smhomelab-intermediate-ca" \
-    issuer_name="intermediate-2024" \
-    | jq -r '.data.csr' > pki_int.csr
+Chart использует Job с hash-based именем для идемпотентного применения конфигурации:
 
-# Sign intermediate with root CA (5 years)
-kubectl exec -n vault $VAULT_POD -- vault write -format=json pki/root/sign-intermediate \
-    csr=@pki_int.csr \
-    format=pem_bundle \
-    ttl=43800h \
-    | jq -r '.data.certificate' > intermediate.crt
-
-# Import signed intermediate
-kubectl exec -n vault $VAULT_POD -- vault write pki_int/intermediate/set-signed \
-    certificate=@intermediate.crt
+```yaml
+# templates/job.yaml
+{{- $configHash := include (print $.Template.BasePath "/configmap.yaml") . | sha256sum | trunc 8 }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-config-{{ $configHash }}
+  namespace: vault
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=true
 ```
 
-## 4. Create PKI Roles
+При изменении конфигурации создаётся новый Job, который применяет изменения.
 
-### Role: db-readonly (1 year certs)
+## 4. What Job Configures
 
-```bash
-kubectl exec -n vault $VAULT_POD -- vault write pki_int/roles/db-readonly \
-    allowed_domains="readonly.db.local" \
-    allow_any_name=true \
-    allow_subdomains=false \
-    max_ttl=8760h \
-    ttl=8760h \
-    key_type=rsa \
-    key_bits=2048 \
-    require_cn=true \
-    cn_validations="disabled"
-```
+Script в ConfigMap настраивает:
 
-### Role: db-readwrite (1 year certs)
-
-```bash
-kubectl exec -n vault $VAULT_POD -- vault write pki_int/roles/db-readwrite \
-    allowed_domains="readwrite.db.local" \
-    allow_any_name=true \
-    allow_subdomains=false \
-    max_ttl=8760h \
-    ttl=8760h \
-    key_type=rsa \
-    key_bits=2048 \
-    require_cn=true \
-    cn_validations="disabled"
-```
-
-### Role: db-admin (1 year certs)
-
-```bash
-kubectl exec -n vault $VAULT_POD -- vault write pki_int/roles/db-admin \
-    allowed_domains="admin.db.local" \
-    allow_any_name=true \
-    allow_subdomains=false \
-    max_ttl=8760h \
-    ttl=8760h \
-    key_type=rsa \
-    key_bits=2048 \
-    require_cn=true \
-    cn_validations="disabled"
-```
+1. **PKI Root CA** - enables pki/, generates root CA
+2. **PKI Intermediate CA** - enables pki_int/, generates intermediate CA
+3. **PKI Roles** - creates roles for certificate issuance
+4. **Vault Policies** - creates access policies
+5. **OIDC Auth** - configures Auth0 integration
+6. **External Groups** - maps Auth0 roles to Vault policies
 
 ## 5. Export CA Certificate
 
-Для настройки баз данных нужен CA cert:
+После успешной настройки PKI, экспортируем CA certificate в Doppler:
 
 ```bash
 # Get CA certificate
-kubectl exec -n vault $VAULT_POD -- vault read -field=certificate pki_int/cert/ca > ca.crt
+ssh ovh-ts "sudo kubectl exec -n vault vault-0 -- vault read -field=certificate pki_int/cert/ca"
 
-# Create K8s secret with CA (для CNPG и других DB)
-kubectl create secret generic vault-ca \
-    --from-file=ca.crt=ca.crt \
-    -n default
+# Copy output to Doppler (shared) as VAULT_CA_CERT
 ```
 
-## 6. Test Certificate Issuance
+## 6. Verify PKI Setup
 
 ```bash
-# Issue test certificate
-kubectl exec -n vault $VAULT_POD -- vault write -format=json pki_int/issue/db-readonly \
-    common_name="test@company.com" \
-    ttl=24h
+# Check PKI engines
+ssh ovh-ts "sudo kubectl exec -n vault vault-0 -- vault secrets list"
 
-# Output includes:
-# - certificate
-# - issuing_ca
-# - ca_chain
-# - private_key
-# - serial_number
+# Check roles
+ssh ovh-ts "sudo kubectl exec -n vault vault-0 -- vault list pki_int/roles"
+
+# Test certificate issuance
+ssh ovh-ts "sudo kubectl exec -n vault vault-0 -- vault write -format=json pki_int/issue/db-readonly common_name=test ttl=1h"
 ```
 
-## 7. Terraform Configuration (GitOps)
+## 7. Adding New PKI Roles
 
-`terraform/vault-pki.tf`:
+Для добавления новой роли:
 
-```hcl
-resource "vault_mount" "pki" {
-  path                      = "pki"
-  type                      = "pki"
-  max_lease_ttl_seconds     = 315360000  # 10 years
-}
+1. Добавить в `values.yaml`:
+   ```yaml
+   pki:
+     roles:
+       db-new-role:
+         allow_any_name: true
+         # ... other settings
+   ```
 
-resource "vault_mount" "pki_int" {
-  path                      = "pki_int"
-  type                      = "pki"
-  max_lease_ttl_seconds     = 157680000  # 5 years
-}
-
-resource "vault_pki_secret_backend_role" "db_readonly" {
-  backend          = vault_mount.pki_int.path
-  name             = "db-readonly"
-  ttl              = 31536000  # 1 year
-  max_ttl          = 31536000
-  allow_any_name   = true
-  key_type         = "rsa"
-  key_bits         = 2048
-}
-
-resource "vault_pki_secret_backend_role" "db_readwrite" {
-  backend          = vault_mount.pki_int.path
-  name             = "db-readwrite"
-  ttl              = 31536000
-  max_ttl          = 31536000
-  allow_any_name   = true
-  key_type         = "rsa"
-  key_bits         = 2048
-}
-
-resource "vault_pki_secret_backend_role" "db_admin" {
-  backend          = vault_mount.pki_int.path
-  name             = "db-admin"
-  ttl              = 31536000
-  max_ttl          = 31536000
-  allow_any_name   = true
-  key_type         = "rsa"
-  key_bits         = 2048
-}
-```
+2. Push to git
+3. ArgoCD создаст новый Job
+4. Job применит новую роль
 
 ## Next Steps
 

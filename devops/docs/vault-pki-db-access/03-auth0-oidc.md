@@ -17,168 +17,131 @@
 5. Advanced Settings → OAuth:
    - **Signing Algorithm**: RS256
 6. Save credentials:
-   - Client ID
-   - Client Secret
+   - Client ID → `infrastructure/apps/values.yaml` (vault.oidcClientId)
+   - Client Secret → Doppler (VAULT_OIDC_CLIENT_SECRET)
 
-## 2. Auth0 Action (уже создан)
+## 2. Auth0 Roles
 
-Action `Add Teleport Traits` уже добавляет роли в токен:
+**User Management** → **Roles** → Create:
+
+| Name | Описание |
+|------|----------|
+| `db-admin` | Full PKI access (issue any cert) |
+| `db-readonly` | Issue readonly certificates |
+| `db-readwrite` | Issue readwrite certificates |
+
+## 3. Auth0 Action
+
+**Actions** → **Library** → **Build Custom** → **Post Login**
+
+Name: `Add Vault Roles`
 
 ```javascript
 exports.onExecutePostLogin = async (event, api) => {
-  const namespace = 'https://teleport';
+  const namespace = 'https://vault/roles';
 
-  if (!event.authorization || !event.authorization.roles) {
-    return;
+  if (event.authorization) {
+    const roles = event.authorization.roles || [];
+    api.idToken.setCustomClaim(namespace, roles);
+    api.accessToken.setCustomClaim(namespace, roles);
+
+    // Add email claim (required for Vault user_claim)
+    if (event.user.email) {
+      api.idToken.setCustomClaim('email', event.user.email);
+    }
   }
-
-  const roles = event.authorization.roles;
-
-  // Set claims for Vault
-  api.idToken.setCustomClaim(`${namespace}/roles`, roles);
 };
 ```
 
-## 3. Store Credentials in Doppler
+**Deploy** и добавить в **Actions** → **Flows** → **Login**.
 
-В Doppler project `shared`:
+## 4. Store Credentials
+
+### Doppler (shared)
 
 ```
-VAULT_OIDC_CLIENT_ID=<client_id>
 VAULT_OIDC_CLIENT_SECRET=<client_secret>
 ```
 
-## 4. Enable OIDC Auth in Vault
+### infrastructure/apps/values.yaml
 
-```bash
-VAULT_POD="vault-0"
-
-# Enable OIDC auth method
-kubectl exec -n vault $VAULT_POD -- vault auth enable oidc
-
-# Configure Auth0 as OIDC provider
-kubectl exec -n vault $VAULT_POD -- vault write auth/oidc/config \
-    oidc_discovery_url="https://login.gaynance.com/" \
-    oidc_client_id="<CLIENT_ID>" \
-    oidc_client_secret="<CLIENT_SECRET>" \
-    default_role="default"
+```yaml
+global:
+  vault:
+    oidcClientId: Y8QpXWQDlKjhTUMaDvnkb5sbsufiHLyP
 ```
 
-## 5. Create OIDC Roles
+## 5. Vault Configuration (GitOps)
 
-### Default Role (base access)
+`infrastructure/charts/vault-config/values.yaml`:
 
-```bash
-kubectl exec -n vault $VAULT_POD -- vault write auth/oidc/role/default \
-    bound_audiences="<CLIENT_ID>" \
-    allowed_redirect_uris="https://vault.trout-paradise.ts.net/ui/vault/auth/oidc/oidc/callback" \
-    allowed_redirect_uris="http://localhost:8250/oidc/callback" \
-    user_claim="email" \
-    groups_claim="https://teleport/roles" \
-    policies="default" \
-    ttl=12h
+```yaml
+oidc:
+  enabled: true
+  discoveryUrl: ""      # Set in ArgoCD values
+  clientId: ""          # Set in ArgoCD values
+  defaultRole: "default"
+
+  role:
+    userClaim: "email"
+    groupsClaim: "https://vault/roles"
+    tokenTtl: "12h"
+    allowedRedirectUris:
+      - "http://localhost:8250/oidc/callback"
+
+externalGroups:
+  - name: "db-admin"
+    policies:
+      - "pki-admin"
+  - name: "db-readonly"
+    policies:
+      - "pki-readonly"
+  - name: "db-readwrite"
+    policies:
+      - "pki-readwrite"
 ```
 
-## 6. Create External Groups
+ArgoCD Application добавляет `discoveryUrl`, `clientId` и Tailscale callback URL.
 
-Маппинг Auth0 roles → Vault groups:
+## 6. Test SSO Login
 
-```bash
-# Get OIDC accessor
-ACCESSOR=$(kubectl exec -n vault $VAULT_POD -- vault auth list -format=json | jq -r '.["oidc/"].accessor')
+### Web UI
 
-# Create external groups for each Auth0 role
+1. Открыть `https://vault.trout-paradise.ts.net`
+2. Method: **OIDC**
+3. Role: **default**
+4. Sign in → Auth0 redirect
+5. Проверить policies в Vault UI
 
-# db-admin group
-kubectl exec -n vault $VAULT_POD -- vault write identity/group \
-    name="db-admin" \
-    type="external" \
-    policies="pki-admin"
-
-ADMIN_GROUP_ID=$(kubectl exec -n vault $VAULT_POD -- vault read -field=id identity/group/name/db-admin)
-
-kubectl exec -n vault $VAULT_POD -- vault write identity/group-alias \
-    name="db-admin" \
-    mount_accessor="$ACCESSOR" \
-    canonical_id="$ADMIN_GROUP_ID"
-
-# db-readonly group
-kubectl exec -n vault $VAULT_POD -- vault write identity/group \
-    name="db-readonly" \
-    type="external" \
-    policies="pki-readonly"
-
-READONLY_GROUP_ID=$(kubectl exec -n vault $VAULT_POD -- vault read -field=id identity/group/name/db-readonly)
-
-kubectl exec -n vault $VAULT_POD -- vault write identity/group-alias \
-    name="db-readonly" \
-    mount_accessor="$ACCESSOR" \
-    canonical_id="$READONLY_GROUP_ID"
-
-# db-readwrite group
-kubectl exec -n vault $VAULT_POD -- vault write identity/group \
-    name="db-readwrite" \
-    type="external" \
-    policies="pki-readwrite"
-
-READWRITE_GROUP_ID=$(kubectl exec -n vault $VAULT_POD -- vault read -field=id identity/group/name/db-readwrite)
-
-kubectl exec -n vault $VAULT_POD -- vault write identity/group-alias \
-    name="db-readwrite" \
-    mount_accessor="$ACCESSOR" \
-    canonical_id="$READWRITE_GROUP_ID"
-
-# db-app-blackpoint group
-kubectl exec -n vault $VAULT_POD -- vault write identity/group \
-    name="db-app-blackpoint" \
-    type="external" \
-    policies="pki-app-blackpoint"
-
-BLACKPOINT_GROUP_ID=$(kubectl exec -n vault $VAULT_POD -- vault read -field=id identity/group/name/db-app-blackpoint)
-
-kubectl exec -n vault $VAULT_POD -- vault write identity/group-alias \
-    name="db-app-blackpoint" \
-    mount_accessor="$ACCESSOR" \
-    canonical_id="$BLACKPOINT_GROUP_ID"
-
-# db-env-dev group
-kubectl exec -n vault $VAULT_POD -- vault write identity/group \
-    name="db-env-dev" \
-    type="external" \
-    policies="pki-env-dev"
-
-DEV_GROUP_ID=$(kubectl exec -n vault $VAULT_POD -- vault read -field=id identity/group/name/db-env-dev)
-
-kubectl exec -n vault $VAULT_POD -- vault write identity/group-alias \
-    name="db-env-dev" \
-    mount_accessor="$ACCESSOR" \
-    canonical_id="$DEV_GROUP_ID"
-
-# db-env-prd group
-kubectl exec -n vault $VAULT_POD -- vault write identity/group \
-    name="db-env-prd" \
-    type="external" \
-    policies="pki-env-prd"
-
-PRD_GROUP_ID=$(kubectl exec -n vault $VAULT_POD -- vault read -field=id identity/group/name/db-env-prd)
-
-kubectl exec -n vault $VAULT_POD -- vault write identity/group-alias \
-    name="db-env-prd" \
-    mount_accessor="$ACCESSOR" \
-    canonical_id="$PRD_GROUP_ID"
-```
-
-## 7. Test OIDC Login
+### CLI
 
 ```bash
-# CLI login (opens browser)
+export VAULT_ADDR="https://vault.trout-paradise.ts.net"
 vault login -method=oidc
 
-# Check token info
+# Check token
 vault token lookup
-
-# Should show policies from your Auth0 roles
 ```
+
+## 7. Troubleshooting
+
+### "claim 'email' not found in token"
+
+Auth0 Action не добавляет email claim. Обновить Action:
+
+```javascript
+api.idToken.setCustomClaim('email', event.user.email);
+```
+
+### "no matching role"
+
+Проверить groups claim namespace совпадает:
+- Auth0 Action: `https://vault/roles`
+- Vault OIDC role: `groups_claim="https://vault/roles"`
+
+### "redirect_uri mismatch"
+
+Добавить URL в Auth0 Application → Allowed Callback URLs.
 
 ## Next Steps
 

@@ -11,22 +11,15 @@ metadata:
   name: vault
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-wave: "5"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: infrastructure
-  source:
-    repoURL: https://helm.releases.hashicorp.com
-    chart: vault
-    targetRevision: "0.29.1"
-    helm:
-      valueFiles:
-        - $values/helm-values/core/vault.yaml
   sources:
     - repoURL: https://helm.releases.hashicorp.com
       chart: vault
-      targetRevision: "0.29.1"
+      targetRevision: "0.30.0"
       helm:
         valueFiles:
           - $values/helm-values/core/vault.yaml
@@ -47,12 +40,6 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-    retry:
-      limit: 5
-      backoff:
-        duration: 5s
-        factor: 2
-        maxDuration: 3m
 ```
 
 ## 2. Helm Values
@@ -62,34 +49,26 @@ spec:
 ```yaml
 global:
   enabled: true
+  tlsDisable: true  # TLS handled by Tailscale
 
 server:
-  # HA mode with Raft storage
+  # Standalone mode (single node)
+  standalone:
+    enabled: true
+    config: |
+      ui = true
+      listener "tcp" {
+        tls_disable = 1
+        address = "[::]:8200"
+        cluster_address = "[::]:8201"
+      }
+      storage "file" {
+        path = "/vault/data"
+      }
+
   ha:
-    enabled: true
-    replicas: 3
-    raft:
-      enabled: true
-      setNodeId: true
-      config: |
-        ui = true
-        listener "tcp" {
-          tls_disable = 1
-          address = "[::]:8200"
-          cluster_address = "[::]:8201"
-        }
-        storage "raft" {
-          path = "/vault/data"
-        }
-        service_registration "kubernetes" {}
+    enabled: false
 
-  # Persistent storage
-  dataStorage:
-    enabled: true
-    size: 10Gi
-    storageClass: longhorn
-
-  # Resources
   resources:
     requests:
       memory: 256Mi
@@ -98,89 +77,74 @@ server:
       memory: 512Mi
       cpu: 500m
 
-  # Service
-  service:
-    type: ClusterIP
+  dataStorage:
+    enabled: true
+    size: 10Gi
+    storageClass: longhorn
 
-  # Ingress disabled - will use Tailscale
-  ingress:
-    enabled: false
+  auditStorage:
+    enabled: true
+    size: 5Gi
+    storageClass: longhorn
 
-# UI enabled
 ui:
   enabled: true
   serviceType: ClusterIP
 
-# Injector disabled (using external-secrets instead)
+csi:
+  enabled: false
+
 injector:
   enabled: false
+
+serverTelemetry:
+  serviceMonitor:
+    enabled: true
+    selectors:
+      release: kube-prometheus-stack
 ```
 
 ## 3. Initialize Vault
 
-После установки нужно инициализировать Vault:
+После ArgoCD sync, подключаемся к поду:
 
 ```bash
-# Get vault pod
-VAULT_POD=$(kubectl get pod -n vault -l app.kubernetes.io/name=vault -o jsonpath='{.items[0].metadata.name}')
+ssh ovh-ts "sudo kubectl exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshold=1"
+```
 
-# Initialize (сохрани ключи в безопасном месте!)
-kubectl exec -n vault $VAULT_POD -- vault operator init \
-  -key-shares=5 \
-  -key-threshold=3
+Output:
 
-# Output:
-# Unseal Key 1: xxx
-# Unseal Key 2: xxx
-# Unseal Key 3: xxx
-# Unseal Key 4: xxx
-# Unseal Key 5: xxx
-# Initial Root Token: hvs.xxx
+```
+Unseal Key 1: xxx
+Initial Root Token: hvs.xxx
 ```
 
 ## 4. Unseal Vault
 
 ```bash
-# Unseal each replica (нужно 3 ключа из 5)
-for pod in vault-0 vault-1 vault-2; do
-  kubectl exec -n vault $pod -- vault operator unseal <key1>
-  kubectl exec -n vault $pod -- vault operator unseal <key2>
-  kubectl exec -n vault $pod -- vault operator unseal <key3>
-done
+ssh ovh-ts "sudo kubectl exec -n vault vault-0 -- vault operator unseal <unseal_key>"
 ```
 
 ## 5. Store Keys in Doppler
 
-Сохрани в Doppler (project: `infrastructure`):
+Сохраняем в Doppler project `shared`:
 
-```
-VAULT_UNSEAL_KEY_1=xxx
-VAULT_UNSEAL_KEY_2=xxx
-VAULT_UNSEAL_KEY_3=xxx
-VAULT_UNSEAL_KEY_4=xxx
-VAULT_UNSEAL_KEY_5=xxx
-VAULT_ROOT_TOKEN=hvs.xxx
-```
+| Key | Value |
+|-----|-------|
+| `VAULT_UNSEAL_KEY` | Unseal key из init |
+| `VAULT_ROOT_TOKEN` | Root token из init |
 
-## 6. Auto-Unseal (Optional)
-
-Для production рекомендуется настроить auto-unseal через:
-- AWS KMS
-- GCP Cloud KMS
-- Azure Key Vault
-- Transit secrets engine (другой Vault)
-
-## 7. Verify Installation
+## 6. Verify Installation
 
 ```bash
 # Check status
-kubectl exec -n vault vault-0 -- vault status
+ssh ovh-ts "sudo kubectl exec -n vault vault-0 -- vault status"
 
 # Login
-kubectl exec -n vault vault-0 -- vault login <root_token>
+ssh ovh-ts "sudo kubectl exec -n vault vault-0 -- vault login <root_token>"
 
-# Check
-kubectl exec -n vault vault-0 -- vault secrets list
+# Check secrets engines
+ssh ovh-ts "sudo kubectl exec -n vault vault-0 -- vault secrets list"
 ```
 
 ## Next Steps

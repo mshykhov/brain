@@ -2,20 +2,21 @@
 
 Централизованный доступ к базам данных через mTLS сертификаты с Auth0 SSO.
 
-## Цели
+## Статус
 
-- Certificate-based доступ к БД (без паролей)
-- Auth0 SSO → Vault → Certificate → Database
-- RBAC через Auth0 roles → Vault policies
-- Long-lived сертификаты (до 1 года)
-- Поддержка любых DB с mTLS (PostgreSQL, MySQL, MongoDB, Redis)
+- [x] Vault установлен (standalone mode)
+- [x] PKI Engine настроен (Root + Intermediate CA)
+- [x] Auth0 OIDC настроен
+- [x] CNPG интеграция работает
+- [ ] Vault OIDC login (email claim issue)
+- [ ] Client workflow тестирование
 
 ## Архитектура
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Auth0                                    │
-│  Roles: db-admin, db-readonly, db-app-*, db-env-*               │
+│  Roles: db-admin, db-readonly, db-readwrite                     │
 └─────────────────────────┬───────────────────────────────────────┘
                           │ OIDC
                           ▼
@@ -23,81 +24,66 @@
 │                         Vault                                    │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐ │
 │  │ OIDC Auth   │───▶│ Policies    │───▶│ PKI Engine          │ │
-│  │ (Auth0)     │    │ (per role)  │    │ - Root CA           │ │
-│  └─────────────┘    └─────────────┘    │ - Intermediate CA   │ │
-│                                         │ - Issue certs       │ │
+│  │ (Auth0)     │    │ (per role)  │    │ - Root CA (10y)     │ │
+│  └─────────────┘    └─────────────┘    │ - Intermediate (5y) │ │
+│                                         │ - Issue certs (3mo) │ │
 │                                         └─────────────────────┘ │
 └─────────────────────────┬───────────────────────────────────────┘
                           │ X.509 Certificates
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Tailscale Network                             │
+│                    (100.64.0.0/10)                               │
 └─────────────────────────┬───────────────────────────────────────┘
-                          │ mTLS
+                          │ mTLS (cert auth)
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                       Databases                                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
-│  │ CNPG     │  │ MySQL    │  │ MongoDB  │  │ Redis    │       │
-│  │ (PG)     │  │          │  │          │  │          │       │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘       │
+│                CloudNativePG (PostgreSQL)                        │
+│  pg_hba.conf:                                                   │
+│  - hostssl all all 10.42.0.0/16 scram-sha-256  (apps)          │
+│  - hostssl all all 100.64.0.0/10 cert          (developers)    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ## RBAC Flow
 
 ```
-Auth0 Roles                    Vault Policy              PKI Role              DB Access
-────────────────────────────────────────────────────────────────────────────────────────
-db-readonly                 →  pki-readonly           →  readonly cert      →  SELECT only
-db-readwrite                →  pki-readwrite          →  readwrite cert     →  CRUD
-db-app-blackpoint           →  pki-blackpoint         →  blackpoint DBs     →  specific app
-db-env-dev                  →  pki-dev                →  dev environment    →  dev DBs only
-db-admin                    →  pki-admin              →  any cert           →  ALL PRIVILEGES
+Auth0 Role       →  Vault Policy    →  PKI Role      →  Can Issue Certs
+─────────────────────────────────────────────────────────────────────────
+db-admin         →  pki-admin       →  db-admin      →  any cert
+db-readonly      →  pki-readonly    →  db-readonly   →  readonly certs
+db-readwrite     →  pki-readwrite   →  db-readwrite  →  readwrite certs
 ```
 
 ## Компоненты
 
-| Компонент | Назначение |
-|-----------|------------|
-| Vault | PKI CA + OIDC auth |
-| Auth0 | Identity provider, roles |
-| Tailscale | Network security layer |
-| CNPG | PostgreSQL with mTLS |
+| Компонент | Назначение | Статус |
+|-----------|------------|--------|
+| Vault | PKI CA + OIDC auth | ✅ |
+| vault-config chart | GitOps конфигурация Vault | ✅ |
+| Auth0 | SSO + роли | ✅ |
+| Doppler | Secrets distribution | ✅ |
+| ClusterExternalSecret | Распространение CA/certs | ✅ |
+| CNPG | PostgreSQL с cert auth | ✅ |
+| Tailscale | Network access | ✅ |
+
+## Secrets в Doppler (shared)
+
+| Key | Описание |
+|-----|----------|
+| `VAULT_ROOT_TOKEN` | Root token для Vault |
+| `VAULT_UNSEAL_KEY` | Unseal key (1 of 1) |
+| `VAULT_OIDC_CLIENT_SECRET` | Auth0 client secret |
+| `VAULT_CA_CERT` | Intermediate CA certificate |
+| `CNPG_REPLICATION_TLS_CRT` | streaming_replica certificate |
+| `CNPG_REPLICATION_TLS_KEY` | streaming_replica private key |
 
 ## Документы
 
-1. [01-vault-install.md](01-vault-install.md) - Установка Vault в K8s
-2. [02-pki-engine.md](02-pki-engine.md) - Настройка PKI engine
-3. [03-auth0-oidc.md](03-auth0-oidc.md) - Интеграция с Auth0
-4. [04-policies.md](04-policies.md) - Vault policies для RBAC
-5. [05-database-config.md](05-database-config.md) - Настройка баз данных
-6. [06-tailscale-expose.md](06-tailscale-expose.md) - Expose через Tailscale
+1. [01-vault-install.md](01-vault-install.md) - Установка Vault
+2. [02-pki-engine.md](02-pki-engine.md) - PKI Engine (GitOps)
+3. [03-auth0-oidc.md](03-auth0-oidc.md) - Auth0 интеграция
+4. [04-policies.md](04-policies.md) - Vault policies
+5. [05-database-config.md](05-database-config.md) - CNPG конфигурация
+6. [06-tailscale-expose.md](06-tailscale-expose.md) - Tailscale exposure
 7. [07-client-workflow.md](07-client-workflow.md) - Developer workflow
-
-## Prerequisites
-
-- [x] K8s cluster (k3s)
-- [x] CloudNativePG PostgreSQL clusters
-- [x] Auth0 tenant с ролями
-- [x] Tailscale operator
-- [ ] Vault
-
-## Auth0 Roles (уже созданы)
-
-```
-# Permission roles
-db-readonly       - Database read-only access
-db-readwrite      - Database read-write access
-
-# App roles
-db-app-blackpoint - Access to Blackpoint databases
-db-app-notifier   - Access to Notifier databases
-
-# Environment roles
-db-env-dev        - Access to dev environment
-db-env-prd        - Access to prd environment
-
-# Admin
-db-admin          - Full database admin access
-```
