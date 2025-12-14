@@ -110,9 +110,35 @@ exports.onExecutePostLogin = async (event, api) => {
 TELEPORT_OIDC_CLIENT_SECRET=<client_secret>
 ```
 
-Client ID публичный, хардкодится в ExternalSecret template.
+Client ID публичный, хранится в `global.teleport.oidcClientId`.
 
 ## 5. Create ExternalSecret
+
+### 5.1 Add to global values
+
+`infrastructure/apps/values.yaml`:
+
+```yaml
+global:
+  # ... other values ...
+  teleport:
+    oidcClientId: EiFjtNTcuZzCjpRABGSbea2TAuinVbyp  # Auth0 application client ID
+```
+
+### 5.2 Pass to credentials chart
+
+`infrastructure/apps/templates/core/credentials.yaml`:
+
+```yaml
+helm:
+  valuesObject:
+    global:
+      # ... other values ...
+      teleport:
+        oidcClientId: {{ .Values.global.teleport.oidcClientId }}
+```
+
+### 5.3 ExternalSecret
 
 `infrastructure/charts/credentials/templates/teleport-oidc.yaml`:
 
@@ -132,8 +158,8 @@ spec:
     creationPolicy: Owner
     template:
       data:
-        client-id: "EiFjtNTcuZzCjpRABGSbea2TAuinVbyp"
-        client-secret: "{{ .clientSecret }}"
+        client-id: {{ .Values.global.teleport.oidcClientId | quote }}
+        client-secret: "{{ "{{" }} .clientSecret {{ "}}" }}"
   data:
     - secretKey: clientSecret
       remoteRef:
