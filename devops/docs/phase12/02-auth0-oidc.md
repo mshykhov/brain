@@ -71,37 +71,32 @@ Name: `Add Teleport Traits`
 
 ```javascript
 exports.onExecutePostLogin = async (event, api) => {
-  const namespace = 'https://teleport/';
-  const roles = event.authorization?.roles || [];
+  const namespace = 'https://teleport';
 
-  // Parse roles into traits
-  const traits = {
-    apps: [],
-    envs: [],
-    permission: 'readonly',  // default
-    isAdmin: false
-  };
-
-  for (const role of roles) {
-    if (role === 'db-admin') {
-      traits.isAdmin = true;
-    } else if (role === 'db-readwrite') {
-      traits.permission = 'readwrite';
-    } else if (role === 'db-readonly') {
-      traits.permission = 'readonly';
-    } else if (role.startsWith('db-app-')) {
-      traits.apps.push(role.replace('db-app-', ''));
-    } else if (role.startsWith('db-env-')) {
-      traits.envs.push(role.replace('db-env-', ''));
-    }
+  if (!event.authorization || !event.authorization.roles) {
+    return;
   }
 
+  const roles = event.authorization.roles;
+
+  // Parse roles using filter/map
+  const apps = roles
+    .filter(r => r.startsWith('db-app-'))
+    .map(r => r.replace('db-app-', ''));
+
+  const envs = roles
+    .filter(r => r.startsWith('db-env-'))
+    .map(r => r.replace('db-env-', ''));
+
+  const permission = roles.includes('db-readwrite') ? 'readwrite' : 'readonly';
+  const isAdmin = roles.includes('db-admin');
+
   // Set claims
-  api.idToken.setCustomClaim(namespace + 'apps', traits.apps);
-  api.idToken.setCustomClaim(namespace + 'envs', traits.envs);
-  api.idToken.setCustomClaim(namespace + 'permission', traits.permission);
-  api.idToken.setCustomClaim(namespace + 'is_admin', traits.isAdmin);
-  api.idToken.setCustomClaim(namespace + 'roles', roles);
+  api.idToken.setCustomClaim(`${namespace}/apps`, apps);
+  api.idToken.setCustomClaim(`${namespace}/envs`, envs);
+  api.idToken.setCustomClaim(`${namespace}/permission`, permission);
+  api.idToken.setCustomClaim(`${namespace}/is_admin`, isAdmin);
+  api.idToken.setCustomClaim(`${namespace}/roles`, roles);
 };
 ```
 
@@ -109,16 +104,17 @@ exports.onExecutePostLogin = async (event, api) => {
 
 ## 4. Store Credentials in Doppler
 
-В Doppler project `infrastructure` (или `shared`):
+В Doppler project `shared`:
 
 ```
-TELEPORT_OIDC_CLIENT_ID=<client_id>
 TELEPORT_OIDC_CLIENT_SECRET=<client_secret>
 ```
 
+Client ID публичный, хардкодится в ExternalSecret template.
+
 ## 5. Create ExternalSecret
 
-`infrastructure/charts/teleport-secrets/templates/external-secret.yaml`:
+`infrastructure/charts/credentials/templates/teleport-oidc.yaml`:
 
 ```yaml
 apiVersion: external-secrets.io/v1
@@ -134,11 +130,12 @@ spec:
   target:
     name: teleport-oidc
     creationPolicy: Owner
+    template:
+      data:
+        client-id: "EiFjtNTcuZzCjpRABGSbea2TAuinVbyp"
+        client-secret: "{{ .clientSecret }}"
   data:
-    - secretKey: client_id
-      remoteRef:
-        key: TELEPORT_OIDC_CLIENT_ID
-    - secretKey: client_secret
+    - secretKey: clientSecret
       remoteRef:
         key: TELEPORT_OIDC_CLIENT_SECRET
 ```
