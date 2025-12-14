@@ -2,7 +2,7 @@
 
 ## Overview
 
-ArgoCD has built-in notifications controller. Send deployment events to Telegram.
+ArgoCD has built-in notifications controller. Send deployment events to Telegram and critical alerts to Pushover.
 
 ## Enable Notifications
 
@@ -35,68 +35,85 @@ spec:
     - secretKey: telegram-token
       remoteRef:
         key: TELEGRAM_BOT_TOKEN
+    - secretKey: pushover-api-token
+      remoteRef:
+        key: PUSHOVER_API_TOKEN
 ```
 
 ### Step 2: ConfigMap
 
 ```yaml
-# manifests/argocd-config/argocd-notifications-cm.yaml
+# charts/argocd-config/templates/argocd-notifications-cm.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: argocd-notifications-cm
   namespace: argocd
 data:
-  # Telegram service
+  # Services
   service.telegram: |
     token: $telegram-token
 
-  # Templates
-  template.app-deployed: |
-    message: |
-      ✅ <b>Deployed</b>: {{ .app.metadata.name }}
-      <b>Revision:</b> <code>{{ .app.status.sync.revision | trunc 7 }}</code>
-      <b>Namespace:</b> {{ .app.spec.destination.namespace }}
+  # Pushover webhook (token in URL for secret substitution)
+  service.webhook.pushover-critical: |
+    url: https://api.pushover.net/1/messages.json?token=$pushover-api-token
+    headers:
+      - name: Content-Type
+        value: application/x-www-form-urlencoded
 
+  # Telegram templates
   template.app-sync-failed: |
     message: |
-      ❌ <b>Sync Failed</b>: {{ .app.metadata.name }}
-      <b>Error:</b> {{ .app.status.operationState.message }}
+      ❌ *{{ .app.metadata.name }}*
+      🚫 Sync failed
+      🏷 Namespace: `{{ .app.spec.destination.namespace }}`
+      {{- if .app.status.operationState.message }}
+      ⚠️ Error: {{ .app.status.operationState.message | trunc 200 }}
+      {{- end }}
+      🔗 [View Details]({{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}?operation=true)
+
+  # Pushover template (form-urlencoded, urlquery for escaping)
+  template.app-sync-failed-pushover: |
+    webhook:
+      pushover-critical:
+        method: POST
+        body: user=YOUR_USER_KEY&priority=2&retry=60&expire=3600&sound=tugboat&title={{ .app.metadata.name | urlquery }}%20sync%20failed&message={{ if .app.status.operationState.message }}{{ .app.status.operationState.message | trunc 150 | urlquery }}{{ else }}Sync%20failed{{ end }}&url={{ .context.argocdUrl | urlquery }}%2Fapplications%2F{{ .app.metadata.name | urlquery }}
 
   template.app-health-degraded: |
     message: |
-      ⚠️ <b>Degraded</b>: {{ .app.metadata.name }}
-      <b>Status:</b> {{ .app.status.health.status }}
+      ⚠️ *{{ .app.metadata.name }}*
+      💔 Health degraded
+      🏷 Namespace: `{{ .app.spec.destination.namespace }}`
+      🔗 [Open in ArgoCD]({{ .context.argocdUrl }}/applications/{{ .app.metadata.name }})
 
-  template.app-sync-running: |
-    message: |
-      🔄 <b>Syncing</b>: {{ .app.metadata.name }}
-      <b>Revision:</b> <code>{{ .app.status.sync.revision | trunc 7 }}</code>
-
-  # Triggers
-  trigger.on-deployed: |
-    - when: app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy'
-      send: [app-deployed]
-
+  # Triggers with oncePer to prevent duplicate notifications
   trigger.on-sync-failed: |
-    - when: app.status.operationState.phase in ['Error', 'Failed']
-      send: [app-sync-failed]
+    - description: Application syncing has failed
+      oncePer: "[app.metadata.name, app.status.operationState?.syncResult?.revision]"
+      send:
+        - app-sync-failed
+        - app-sync-failed-pushover
+      when: app.status.operationState != nil and app.status.operationState.phase in ['Error', 'Failed']
 
   trigger.on-health-degraded: |
-    - when: app.status.health.status == 'Degraded'
-      send: [app-health-degraded]
+    - description: Application has degraded
+      oncePer: app.status.operationState?.syncResult?.revision
+      send:
+        - app-health-degraded
+      when: app.status.health.status == 'Degraded'
 
-  trigger.on-sync-running: |
-    - when: app.status.operationState.phase in ['Running']
-      send: [app-sync-running]
-
-  # Default subscriptions (all apps)
+  # Subscriptions
   subscriptions: |
+    # Critical: Telegram + Pushover
+    - recipients:
+        - telegram:-1001234567890|2
+        - pushover-critical
+      triggers:
+        - on-sync-failed
+    # Warning: Telegram only
     - recipients:
         - telegram:-1001234567890|5
       triggers:
-        - on-deployed
-        - on-sync-failed
         - on-health-degraded
 ```
 
@@ -186,6 +203,68 @@ kubectl get applications -A -o jsonpath='{range .items[*]}{.metadata.name}: {.me
 Test template syntax:
 ```bash
 argocd admin notifications template get app-deployed
+```
+
+## Pushover Integration
+
+Pushover для критических алертов (обходит DND на iOS).
+
+### Key Points
+
+1. **Secret substitution** (`$secretKey`) работает только в `service.*` definitions, НЕ в template body
+2. **Token в URL сервиса** - единственный способ передать token:
+   ```yaml
+   service.webhook.pushover-critical: |
+     url: https://api.pushover.net/1/messages.json?token=$pushover-api-token
+   ```
+3. **Form-urlencoded** вместо JSON - избегает проблем с кавычками в error messages
+4. **`urlquery` filter** - экранирует спецсимволы в template
+
+### Pushover Priority Levels
+
+| Priority | Behavior |
+|----------|----------|
+| -2 | Lowest (no notification) |
+| -1 | Low (no sound) |
+| 0 | Normal |
+| 1 | High (bypass quiet hours) |
+| 2 | Emergency (requires retry/expire, iOS Critical Alert) |
+
+### Example Request
+
+```
+POST https://api.pushover.net/1/messages.json?token=xxx
+Content-Type: application/x-www-form-urlencoded
+
+user=xxx&priority=2&retry=60&expire=3600&title=app-name%20sync%20failed&message=Error%20message
+```
+
+## Notification Caching (oncePer)
+
+ArgoCD предотвращает спам через `oncePer` - notification отправляется один раз пока значение не изменится.
+
+### How it Works
+
+```yaml
+trigger.on-sync-failed: |
+  - oncePer: "[app.metadata.name, app.status.operationState?.syncResult?.revision]"
+```
+
+- Кеш хранится в **Application annotations** (`notified.notifications.argoproj.io`)
+- НЕ в памяти контроллера - рестарт не сбрасывает кеш
+- Notification повторится только при новом revision (новый коммит)
+
+### Clear Cache for Testing
+
+```bash
+# Удалить annotation чтобы notification отправился повторно
+kubectl annotate app <app-name> -n argocd notified.notifications.argoproj.io-
+```
+
+### View Notification History
+
+```bash
+kubectl get app <app-name> -n argocd -o jsonpath='{.metadata.annotations.notified\.notifications\.argoproj\.io}' | jq .
 ```
 
 ## Integration with Alertmanager
