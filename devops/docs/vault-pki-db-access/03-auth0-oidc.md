@@ -38,18 +38,15 @@ Name: `Add Vault Roles`
 
 ```javascript
 exports.onExecutePostLogin = async (event, api) => {
-  const namespace = 'https://vault/roles';
+  const namespace = 'https://vault';
 
-  if (event.authorization) {
-    const roles = event.authorization.roles || [];
-    api.idToken.setCustomClaim(namespace, roles);
-    api.accessToken.setCustomClaim(namespace, roles);
-
-    // Add email claim (required for Vault user_claim)
-    if (event.user.email) {
-      api.idToken.setCustomClaim('email', event.user.email);
-    }
+  if (!event.authorization || !event.authorization.roles) {
+    return;
   }
+
+  const roles = event.authorization.roles;
+  api.idToken.setCustomClaim(`${namespace}/roles`, roles);
+  api.accessToken.setCustomClaim(`${namespace}/roles`, roles);
 };
 ```
 
@@ -110,7 +107,7 @@ externalGroups:
       - "pki-readwrite"
 ```
 
-**Важно:** `oidcScopes` включает `email` scope - это нужно для получения email claim от Auth0.
+**Важно:** `oidcScopes` включает `email` scope - Auth0 автоматически добавляет email claim в token.
 
 ArgoCD Application добавляет `discoveryUrl`, `clientId` и Tailscale callback URL.
 
@@ -138,11 +135,7 @@ vault token lookup
 
 ### "claim 'email' not found in token"
 
-Auth0 Action не добавляет email claim. Обновить Action:
-
-```javascript
-api.idToken.setCustomClaim('email', event.user.email);
-```
+Проверить что `oidcScopes` включает `email` в vault-config values.
 
 ### "no matching role"
 
