@@ -127,6 +127,18 @@ vdb() {
     echo "Credentials set: PGUSER=$PGUSER (TTL: ${ttl}s)"
 }
 
+# Show my Vault info (identity, policies, available roles)
+vinfo() {
+    echo "=== Token Info ==="
+    vault token lookup -format=json 2>/dev/null | jq -r '
+        "Policies: \(.data.policies | join(", "))",
+        "TTL: \(.data.ttl)s",
+        "Expires: \(.data.expire_time)"'
+
+    echo -e "\n=== Available Database Roles ==="
+    vault list -format=json database/roles 2>/dev/null | jq -r '.[]' || echo "No access to list roles"
+}
+
 # Quick connect to databases
 db-blackpoint-dev() {
     vdb blackpoint-dev ${1:-readonly}
@@ -149,6 +161,19 @@ db-notifier-dev() {
 ```bash
 # Morning: login (once per 7 days)
 vlogin
+
+# Check your access
+vinfo
+# Output:
+# === Token Info ===
+# Policies: default, self-service, database-blackpoint-dev-admin
+# TTL: 604800s
+# Expires: 2024-01-22T10:00:00Z
+#
+# === Available Database Roles ===
+# blackpoint-dev-admin
+# blackpoint-dev-readonly
+# blackpoint-dev-readwrite
 
 # Get credentials and connect (once per day)
 db-blackpoint-dev              # readonly access
