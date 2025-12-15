@@ -34,36 +34,37 @@ vault login -method=oidc
 # Success! You are now authenticated.
 # token          hvs.xxx
 # token_accessor xxx
-# token_policies ["default" "pki-readonly" "pki-app-blackpoint" "pki-env-dev"]
+# token_policies ["default" "database-blackpoint-dev-readonly" ...]
 ```
 
-## 3. Get Certificate
+## 3. Get Database Credentials
 
 ### One-liner
 
 ```bash
-vault write -format=json pki_int/issue/db-readonly \
-    common_name="$(whoami)@company.com" \
-    ttl="8760h" | tee cert.json | jq -r '
-      .data.certificate, .data.private_key, .data.ca_chain[0]
-    ' | awk 'NR==1{print > "client.crt"} NR==2{print > "client.key"} NR==3{print > "ca.crt"}'
+# Get credentials and set environment variables
+eval $(vault read -format=json database/creds/blackpoint-dev-readonly | \
+    jq -r '.data | "export PGUSER=\(.username) PGPASSWORD=\(.password)"')
+echo "Credentials valid for 24h"
 ```
 
 ### Step by Step
 
 ```bash
-# Request certificate
-vault write -format=json pki_int/issue/db-readonly \
-    common_name="myron@company.com" \
-    ttl="8760h" > cert.json
+# Request credentials
+vault read database/creds/blackpoint-dev-readonly
 
-# Extract files
-jq -r '.data.certificate' cert.json > ~/.pg/client.crt
-jq -r '.data.private_key' cert.json > ~/.pg/client.key
-jq -r '.data.ca_chain[0]' cert.json > ~/.pg/ca.crt
+# Output:
+# Key                Value
+# ---                -----
+# lease_id           database/creds/blackpoint-dev-readonly/abc123
+# lease_duration     24h
+# username           v-oidc-readonly-HfgL2k
+# password           A1b2C3d4-xxxxx
 
-# Set permissions
-chmod 600 ~/.pg/client.key
+# Set environment
+export PGUSER="v-oidc-readonly-HfgL2k"
+export PGPASSWORD="A1b2C3d4-xxxxx"
 ```
 
 ## 4. Connect to Database
@@ -71,14 +72,10 @@ chmod 600 ~/.pg/client.key
 ### psql
 
 ```bash
-psql "host=blackpoint-api-dev.trout-paradise.ts.net \
+psql "host=blackpoint-db-dev.trout-paradise.ts.net \
       port=5432 \
       dbname=blackpoint \
-      user=readonly_user \
-      sslmode=verify-full \
-      sslcert=$HOME/.pg/client.crt \
-      sslkey=$HOME/.pg/client.key \
-      sslrootcert=$HOME/.pg/ca.crt"
+      sslmode=require"
 ```
 
 ### IntelliJ IDEA / DataGrip
@@ -86,17 +83,18 @@ psql "host=blackpoint-api-dev.trout-paradise.ts.net \
 1. **Database** → **+** → **Data Source** → **PostgreSQL**
 2. Configure:
    ```
-   Host: blackpoint-api-dev.trout-paradise.ts.net
+   Host: blackpoint-db-dev.trout-paradise.ts.net
    Port: 5432
    Database: blackpoint
-   User: readonly_user
+   User: <from vault read>
+   Password: <from vault read>
    ```
 3. **SSH/SSL** tab:
    - ✅ Use SSL
-   - **CA file**: `~/.pg/ca.crt`
-   - **Client certificate file**: `~/.pg/client.crt`
-   - **Client key file**: `~/.pg/client.key`
+   - Mode: `require`
 4. **Test Connection** → OK
+
+**Note:** Credentials expire in 24h. Get new ones with `vault read database/creds/...`
 
 ## 5. Shell Aliases
 
@@ -104,37 +102,46 @@ Add to `~/.bashrc` or `~/.zshrc`:
 
 ```bash
 # Vault shortcuts
+export VAULT_ADDR="https://vault.trout-paradise.ts.net"
 alias vlogin='vault login -method=oidc'
 
-# Get DB certificate (readonly)
-vdb-cert-ro() {
-    vault write -format=json pki_int/issue/db-readonly \
-        common_name="$(whoami)@company.com" \
-        ttl="${1:-8760h}" > ~/.pg/cert.json
-    jq -r '.data.certificate' ~/.pg/cert.json > ~/.pg/client.crt
-    jq -r '.data.private_key' ~/.pg/cert.json > ~/.pg/client.key
-    jq -r '.data.ca_chain[0]' ~/.pg/cert.json > ~/.pg/ca.crt
-    chmod 600 ~/.pg/client.key
-    echo "Certificate saved to ~/.pg/"
-    echo "Valid until: $(jq -r '.data.expiration | tonumber | strftime("%Y-%m-%d")' ~/.pg/cert.json)"
-}
-
-# Get DB certificate (readwrite)
-vdb-cert-rw() {
-    vault write -format=json pki_int/issue/db-readwrite \
-        common_name="$(whoami)@company.com" \
-        ttl="${1:-8760h}" > ~/.pg/cert.json
-    jq -r '.data.certificate' ~/.pg/cert.json > ~/.pg/client.crt
-    jq -r '.data.private_key' ~/.pg/cert.json > ~/.pg/client.key
-    jq -r '.data.ca_chain[0]' ~/.pg/cert.json > ~/.pg/ca.crt
-    chmod 600 ~/.pg/client.key
-    echo "Certificate saved to ~/.pg/"
+# Get DB credentials and set env vars
+vdb() {
+    local db=$1
+    local access=${2:-readonly}
+    local role="${db}-${access}"
+    
+    echo "Getting credentials for $role..."
+    local creds=$(vault read -format=json "database/creds/$role" 2>/dev/null)
+    
+    if [ -z "$creds" ]; then
+        echo "Error: Could not get credentials for $role"
+        echo "Available roles: blackpoint-dev-readonly, blackpoint-dev-readwrite, notifier-dev-readonly, etc."
+        return 1
+    fi
+    
+    export PGUSER=$(echo $creds | jq -r '.data.username')
+    export PGPASSWORD=$(echo $creds | jq -r '.data.password')
+    
+    local ttl=$(echo $creds | jq -r '.lease_duration')
+    echo "Credentials set: PGUSER=$PGUSER (TTL: ${ttl}s)"
 }
 
 # Quick connect to databases
-alias db-blackpoint-dev='psql "host=blackpoint-api-dev.trout-paradise.ts.net port=5432 dbname=blackpoint user=readonly_user sslmode=verify-full sslcert=$HOME/.pg/client.crt sslkey=$HOME/.pg/client.key sslrootcert=$HOME/.pg/ca.crt"'
+db-blackpoint-dev() {
+    vdb blackpoint-dev ${1:-readonly}
+    psql "host=blackpoint-db-dev.trout-paradise.ts.net port=5432 dbname=blackpoint sslmode=require"
+}
 
-alias db-blackpoint-prd='psql "host=blackpoint-api-prd.trout-paradise.ts.net port=5432 dbname=blackpoint user=readonly_user sslmode=verify-full sslcert=$HOME/.pg/client.crt sslkey=$HOME/.pg/client.key sslrootcert=$HOME/.pg/ca.crt"'
+db-blackpoint-prd() {
+    vdb blackpoint-prd ${1:-readonly}
+    psql "host=blackpoint-db-prd.trout-paradise.ts.net port=5432 dbname=blackpoint sslmode=require"
+}
+
+db-notifier-dev() {
+    vdb notifier-dev ${1:-readonly}
+    psql "host=notifier-db-dev.trout-paradise.ts.net port=5432 dbname=notifier sslmode=require"
+}
 ```
 
 ## 6. Daily Workflow
@@ -143,23 +150,31 @@ alias db-blackpoint-prd='psql "host=blackpoint-api-prd.trout-paradise.ts.net por
 # Morning: login (once per 7 days)
 vlogin
 
-# Get/refresh certificate (once per year or when needed)
-vdb-cert-ro
+# Get credentials and connect (once per day)
+db-blackpoint-dev              # readonly access
+db-blackpoint-dev readwrite    # readwrite access
 
-# Connect to database
-db-blackpoint-dev
-
-# Or use IntelliJ IDEA with saved connection
+# Or manually:
+vdb blackpoint-dev readonly
+psql -h blackpoint-db-dev.trout-paradise.ts.net -d blackpoint
 ```
 
-## 7. Certificate Renewal
+## 7. Credential Lifecycle
 
-```bash
-# Check certificate expiration
-openssl x509 -in ~/.pg/client.crt -noout -dates
+```
+Timeline:
+─────────────────────────────────────────────────────────────
+T=0h:   vault read database/creds/... → new credentials
+T=0h:   Connect to database with credentials
+T=24h:  Credentials expire, DB connection drops
+T=24h+: Get new credentials with vault read
+─────────────────────────────────────────────────────────────
 
-# Renew when needed
-vdb-cert-ro
+If Auth0 role removed:
+T=0h:   User has credentials (24h TTL)
+T=1h:   Admin removes role in Auth0
+T=2h:   User tries vault read → DENIED
+T=24h:  Old credentials expire → complete access loss
 ```
 
 ## 8. Troubleshooting
@@ -170,17 +185,18 @@ vdb-cert-ro
 # Check your Vault policies
 vault token lookup
 
-# Should show policies like: pki-readonly, pki-app-blackpoint, etc.
+# Should show policies like: database-blackpoint-dev-readonly
 # If missing, check Auth0 roles assignment
 ```
 
-### "certificate verify failed"
+### "no such role"
 
 ```bash
-# Verify CA chain
-openssl verify -CAfile ~/.pg/ca.crt ~/.pg/client.crt
+# List available database roles
+vault list database/roles
 
-# Should output: client.crt: OK
+# Check you have correct role format: {app}-{env}-{access}
+# Examples: blackpoint-dev-readonly, notifier-prd-readwrite
 ```
 
 ### "connection refused"
@@ -190,20 +206,20 @@ openssl verify -CAfile ~/.pg/ca.crt ~/.pg/client.crt
 tailscale status
 
 # Check if database is accessible
-nc -zv blackpoint-api-dev.trout-paradise.ts.net 5432
+nc -zv blackpoint-db-dev.trout-paradise.ts.net 5432
 ```
 
-### "FATAL: no pg_hba.conf entry"
+### "FATAL: password authentication failed"
 
 ```bash
-# Database not configured for cert auth
-# Check pg_hba.conf has: hostssl all all 0.0.0.0/0 cert
+# Credentials may have expired, get new ones
+vdb blackpoint-dev readonly
 ```
 
 ## 9. Security Notes
 
-- Certificate stored in `~/.pg/` - keep secure
-- Private key (`client.key`) has 600 permissions
+- Credentials auto-expire after 24 hours
 - Token expires after 7 days - re-login required
-- Certificate valid for 1 year by default
-- All access logged in Vault audit log
+- All credential requests logged in Vault audit log
+- Role changes in Auth0 take effect on next credential request
+- No certificates to manage - just username/password
