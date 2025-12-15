@@ -57,7 +57,7 @@ pki:
       allow_ip_sans: false
       server_flag: false
       client_flag: true
-      max_ttl: "2190h"  # 3 months
+      max_ttl: "8760h"  # 1 year
 
     db-readwrite:
       allow_any_name: true
@@ -65,7 +65,7 @@ pki:
       allow_ip_sans: false
       server_flag: false
       client_flag: true
-      max_ttl: "2190h"
+      max_ttl: "8760h"  # 1 year
 
     db-admin:
       allow_any_name: true
@@ -73,7 +73,7 @@ pki:
       allow_ip_sans: false
       server_flag: false
       client_flag: true
-      max_ttl: "2190h"
+      max_ttl: "8760h"  # 1 year
 ```
 
 ## 3. Configuration Job

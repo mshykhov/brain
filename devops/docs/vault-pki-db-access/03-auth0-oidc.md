@@ -85,7 +85,7 @@ oidc:
   role:
     userClaim: "email"
     groupsClaim: "https://vault/roles"
-    tokenTtl: "12h"
+    tokenTtl: "168h"  # 7 days
     # Request email scope from Auth0 to include email claim
     oidcScopes:
       - "openid"

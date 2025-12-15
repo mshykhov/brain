@@ -6,10 +6,10 @@
 
 - [x] Vault установлен (standalone mode)
 - [x] PKI Engine настроен (Root + Intermediate CA)
-- [x] Auth0 OIDC настроен
+- [x] Auth0 OIDC настроен (token TTL: 7 дней)
 - [x] CNPG интеграция работает
-- [ ] Vault OIDC login (email claim issue)
-- [ ] Client workflow тестирование
+- [x] Vault OIDC login работает
+- [ ] Client workflow тестирование (требует Tailscale exposure)
 
 ## Архитектура
 
@@ -26,7 +26,7 @@
 │  │ OIDC Auth   │───▶│ Policies    │───▶│ PKI Engine          │ │
 │  │ (Auth0)     │    │ (per role)  │    │ - Root CA (10y)     │ │
 │  └─────────────┘    └─────────────┘    │ - Intermediate (5y) │ │
-│                                         │ - Issue certs (3mo) │ │
+│                                         │ - Issue certs (1y) │ │
 │                                         └─────────────────────┘ │
 └─────────────────────────┬───────────────────────────────────────┘
                           │ X.509 Certificates
@@ -95,10 +95,10 @@ db-readwrite     →  pki-readwrite   →  db-readwrite  →  readwrite certs
 export VAULT_ADDR="https://vault.trout-paradise.ts.net"
 vault login -method=oidc
 
-# 2. Get certificate
+# 2. Get certificate (1 year TTL)
 vault write -format=json pki_int/issue/db-readonly \
     common_name="$(whoami)@company.com" \
-    ttl="2190h" > cert.json
+    ttl="8760h" > cert.json
 
 # 3. Extract certificate files
 jq -r '.data.certificate' cert.json > ~/.pg/client.crt

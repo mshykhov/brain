@@ -140,7 +140,7 @@ alias db-blackpoint-prd='psql "host=blackpoint-api-prd.trout-paradise.ts.net por
 ## 6. Daily Workflow
 
 ```bash
-# Morning: login (once per 12h)
+# Morning: login (once per 7 days)
 vlogin
 
 # Get/refresh certificate (once per year or when needed)
@@ -204,6 +204,6 @@ nc -zv blackpoint-api-dev.trout-paradise.ts.net 5432
 
 - Certificate stored in `~/.pg/` - keep secure
 - Private key (`client.key`) has 600 permissions
-- Token expires after 12h - re-login required
+- Token expires after 7 days - re-login required
 - Certificate valid for 1 year by default
 - All access logged in Vault audit log
