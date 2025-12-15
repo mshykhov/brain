@@ -8,20 +8,45 @@
 # macOS
 brew install hashicorp/tap/vault
 
-# Windows (scoop)
-scoop install vault
+# Windows (PowerShell) - choose one:
+scoop install vault          # Option 1: Scoop
+choco install vault          # Option 2: Chocolatey
+winget install HashiCorp.Vault  # Option 3: Winget
 
-# Linux
+# Linux (Debian/Ubuntu)
 curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
 sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
 sudo apt-get update && sudo apt-get install vault
 ```
 
+### Install jq (required for shell aliases)
+
+```bash
+# macOS
+brew install jq
+
+# Windows
+scoop install jq
+choco install jq
+winget install jqlang.jq
+
+# Linux
+sudo apt-get install jq
+```
+
 ### Configure Vault Address
 
 ```bash
-# Add to ~/.bashrc or ~/.zshrc
+# Linux/macOS: Add to ~/.bashrc or ~/.zshrc
 export VAULT_ADDR="https://vault.trout-paradise.ts.net"
+```
+
+```powershell
+# Windows PowerShell: Add to $PROFILE
+$env:VAULT_ADDR = "https://vault.trout-paradise.ts.net"
+
+# Or set permanently:
+[Environment]::SetEnvironmentVariable("VAULT_ADDR", "https://vault.trout-paradise.ts.net", "User")
 ```
 
 ## 2. Login via Auth0
