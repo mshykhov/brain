@@ -278,7 +278,126 @@ T=24h: Old credentials expire → Complete access loss
 ─────────────────────────────────────────────────────────────
 ```
 
-## 6. Comparison: PKI vs Database Secrets
+## 6. Adding New Database (GitOps)
+
+All configuration is in `infrastructure/charts/vault-config/values.yaml`.
+
+### Step 1: Add Database Connection
+
+```yaml
+database:
+  connections:
+    # Existing
+    blackpoint-dev:
+      plugin: postgresql-database-plugin
+      host: "blackpoint-api-main-db-dev-cluster-rw.blackpoint-api-dev.svc"
+      port: 5432
+      database: blackpoint
+      sslmode: require
+      username: "postgres"
+      secretRef:
+        namespace: blackpoint-api-dev
+        name: blackpoint-api-main-db-dev-cluster-superuser
+        key: password
+      allowedRoles:
+        - blackpoint-dev-readonly
+        - blackpoint-dev-readwrite
+        - blackpoint-dev-admin
+
+    # NEW DATABASE - add here
+    notifier-dev:
+      plugin: postgresql-database-plugin
+      host: "notifier-main-db-dev-cluster-rw.notifier-dev.svc"
+      port: 5432
+      database: notifier
+      sslmode: require
+      username: "postgres"
+      secretRef:
+        namespace: notifier-dev
+        name: notifier-main-db-dev-cluster-superuser
+        key: password
+      allowedRoles:
+        - notifier-dev-readonly
+        - notifier-dev-readwrite
+        - notifier-dev-admin
+```
+
+### Step 2: Add Database Roles
+
+```yaml
+database:
+  roles:
+    # NEW ROLES
+    notifier-dev-readonly:
+      dbName: notifier-dev
+      defaultTtl: "24h"
+      maxTtl: "72h"
+      creationStatements: |
+        CREATE ROLE "{{name}}" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';
+        GRANT CONNECT ON DATABASE notifier TO "{{name}}";
+        GRANT USAGE ON SCHEMA public TO "{{name}}";
+        GRANT SELECT ON ALL TABLES IN SCHEMA public TO "{{name}}";
+      revocationStatements: |
+        DROP ROLE IF EXISTS "{{name}}";
+
+    notifier-dev-readwrite:
+      dbName: notifier-dev
+      defaultTtl: "24h"
+      maxTtl: "72h"
+      creationStatements: |
+        CREATE ROLE "{{name}}" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';
+        GRANT CONNECT ON DATABASE notifier TO "{{name}}";
+        GRANT USAGE ON SCHEMA public TO "{{name}}";
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{{name}}";
+        GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO "{{name}}";
+      revocationStatements: |
+        DROP ROLE IF EXISTS "{{name}}";
+```
+
+### Step 3: Add Vault Policies
+
+```yaml
+policies:
+  database-notifier-dev-readonly: |
+    path "database/creds/notifier-dev-readonly" {
+      capabilities = ["read"]
+    }
+
+  database-notifier-dev-readwrite: |
+    path "database/creds/notifier-dev-readwrite" {
+      capabilities = ["read"]
+    }
+    path "database/creds/notifier-dev-readonly" {
+      capabilities = ["read"]
+    }
+```
+
+### Step 4: Add External Groups
+
+```yaml
+externalGroups:
+  - name: "db:notifier:dev:readonly"
+    policies:
+      - "database-notifier-dev-readonly"
+  - name: "db:notifier:dev:readwrite"
+    policies:
+      - "database-notifier-dev-readwrite"
+```
+
+### Step 5: Add Auth0 Roles
+
+In Auth0 Dashboard → User Management → Roles:
+- Create `db-app-notifier` role
+- Assign to users who need notifier database access
+
+### Step 6: Deploy
+
+```bash
+git add -A && git commit -m "feat(vault): add notifier-dev database" && git push
+# ArgoCD syncs automatically
+```
+
+## 7. Comparison: PKI vs Database Secrets
 
 | Aspect | PKI Certificates | Database Secrets |
 |--------|------------------|------------------|
