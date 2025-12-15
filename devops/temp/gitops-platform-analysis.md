@@ -1,6 +1,6 @@
 # ПОЛНЫЙ АНАЛИЗ GITOPS ПЛАТФОРМЫ
 
-**Дата:** 2025-12-07
+**Дата:** 2025-12-15 (updated)
 **Анализируемые репозитории:**
 - `example-monorepo/modules/deploy` (24 YAML файла)
 - `example-monorepo/modules/infrastructure` (89 YAML файлов)
@@ -33,15 +33,18 @@
 ### 1.1 Структура репозиториев
 
 ```
-gitops-platform/                        # Target consolidated repo
-├── deploy/                             # Application deployments
-│   ├── databases/                      # Database manifests
-│   │   └── example-api/
-│   │       ├── postgres/main.yaml      # CloudNativePG cluster
+gitops-platform/
+├── deploy/                             # Application deployments (decentralized)
+│   ├── databases/                      # Database manifests + Tailscale config
+│   │   └── {service}/
+│   │       ├── postgres/main.yaml      # CloudNativePG cluster + tailscale section
 │   │       └── redis/cache.yaml        # Redis instance
-│   ├── services/                       # Microservice Helm charts
-│   │   ├── example-api/
-│   │   └── example-ui/
+│   ├── services/                       # Service Helm charts + Ingress config
+│   │   ├── {service}/
+│   │   │   ├── Chart.yaml
+│   │   │   ├── values.yaml             # Shared config
+│   │   │   ├── values-dev.yaml         # DEV: ingress.tailscale.enabled
+│   │   │   └── values-prd.yaml         # PRD: ingress.subdomain
 │   └── _library/                       # Shared Helm library
 │
 ├── infrastructure/                     # Platform infrastructure
@@ -49,19 +52,21 @@ gitops-platform/                        # Target consolidated repo
 │   │   ├── templates/
 │   │   │   ├── cicd/                   # ArgoCD, Image Updater
 │   │   │   ├── core/                   # Operators, Secrets
-│   │   │   ├── data/                   # Postgres, Redis clusters
+│   │   │   ├── data/                   # postgres-clusters, redis-clusters
 │   │   │   ├── monitoring/             # Prometheus, Loki, Alloy
-│   │   │   ├── network/                # Ingress, DNS, Tunnels
-│   │   │   └── services/               # Service ApplicationSets
-│   │   └── values.yaml                 # КРИТИЧНЫЙ: hardcoded values
+│   │   │   ├── network/                # Ingress, DNS, Tunnels, protected-services
+│   │   │   └── services/               # services-appset (multi-source)
+│   │   └── values.yaml
 │   ├── bootstrap/root.yaml             # Entry point
-│   ├── charts/                         # Custom Helm charts
+│   ├── charts/
+│   │   ├── protected-services/         # ONLY infra services (vault, argocd, longhorn, grafana)
+│   │   ├── service-ingress/            # HTTP ingress for services (NGINX + Tailscale)
+│   │   └── tailscale-service/          # TCP exposure for databases
 │   ├── helm-values/                    # External chart values
 │   └── manifests/                      # Raw Kubernetes manifests
 │
 ├── docs/                               # Documentation
-├── scripts/                            # Automation scripts
-└── services/                           # ??? (unclear purpose)
+└── scripts/                            # Automation scripts
 ```
 
 ### 1.2 Компоненты инфраструктуры (25 компонентов)
@@ -77,20 +82,96 @@ gitops-platform/                        # Target consolidated repo
 | 5 | reloader | Auto-restart on config change | OK |
 | 5 | secret-stores | ClusterSecretStore | OK |
 | 7 | argocd-image-updater | Image auto-update | OK |
-| 10 | postgres-clusters | Dynamic PG clusters | HA ISSUE |
-| 10 | redis-clusters | Dynamic Redis instances | HA ISSUE |
+| 10 | postgres-clusters | CNPG clusters + Tailscale exposure | OK |
+| 10 | redis-clusters | Dynamic Redis instances | OK |
 | 10 | tailscale-operator | Private networking | OK |
 | 12 | nginx-ingress | Ingress controller | OK |
-| 13 | external-dns | DNS automation | DEBUG LOG |
+| 13 | external-dns | DNS automation | OK |
 | 15 | oauth2-proxy | OIDC auth proxy | OK |
-| 17 | protected-services | Internal services | OK |
+| 17 | protected-services | Infra services only (vault, argocd, longhorn, grafana) | OK |
 | 21 | cloudflare-tunnel | Public access | OK |
-| 29 | node-tuning | Kernel params | WAVE ISSUE |
+| 29 | node-tuning | Kernel params | OK |
 | 30 | kube-prometheus-stack | Monitoring | OK |
 | 32 | loki | Log aggregation | OK |
-| 33 | alloy | Log collection | HARDCODED |
+| 33 | alloy | Log collection | OK |
 | 35 | prometheus-rules | Alerting | OK |
-| 100 | services | App deployments | OK |
+| 100 | services | App deployments + Ingress (multi-source) | OK |
+
+### 1.3 Decentralized Ingress Architecture
+
+Ingress и Tailscale конфигурация находится рядом с сервисами и базами данных в deploy репозитории.
+
+#### Services (HTTP)
+
+```
+deploy/services/*/values-{env}.yaml     → ingress section
+        │
+        ▼
+ApplicationSet (services-appset)
+  └── sources:
+        ├── Service Helm chart (Deployment, Service)
+        └── service-ingress chart (NGINX + Tailscale Ingress)
+              │
+              ▼
+        DEV: {service}-dev.{tailnet}.ts.net (Tailscale)
+        PRD: {subdomain}.{domain} (Cloudflare)
+```
+
+**DEV конфигурация:**
+```yaml
+# deploy/services/{service}/values-dev.yaml
+ingress:
+  enabled: true
+  tailscale:
+    enabled: true
+```
+
+**PRD конфигурация:**
+```yaml
+# deploy/services/{service}/values-prd.yaml
+ingress:
+  enabled: true
+  subdomain: api-{service}  # => api-{service}.gaynance.com
+```
+
+#### Databases (TCP)
+
+```
+deploy/databases/*/postgres/main.yaml   → tailscale section
+        │
+        ▼
+ApplicationSet (postgres-clusters)
+  └── sources:
+        ├── CloudNativePG Cluster chart
+        └── tailscale-service chart (LoadBalancer)
+              │
+              ▼
+        {hostname}-{env}.{tailnet}.ts.net:5432
+```
+
+**Конфигурация:**
+```yaml
+# deploy/databases/{service}/postgres/main.yaml
+cluster:
+  instances: 1
+  storage:
+    size: 5Gi
+
+tailscale:
+  enabled: true
+  hostname: {service}-db  # => {service}-db-{env}.ts.net:5432
+```
+
+#### Protected Services (Infrastructure Only)
+
+```yaml
+# infrastructure/charts/protected-services/values.yaml
+services:
+  vault:     # vault.ts.net (direct)
+  argocd:    # argocd.ts.net
+  longhorn:  # longhorn.ts.net
+  grafana:   # grafana.ts.net
+```
 
 ---
 
