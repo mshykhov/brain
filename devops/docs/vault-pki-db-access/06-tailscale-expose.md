@@ -64,14 +64,18 @@ spec:
 ```
 
 4. **Tailscale Operator** видит Service и создаёт proxy
-5. Доступ: `blackpoint-db.trout-paradise.ts.net:5432`
+5. Доступ: `blackpoint-db-dev.trout-paradise.ts.net:5432`
 
 ## 3. Current Databases
 
-| Database | Hostname | Access |
-|----------|----------|--------|
-| blackpoint-api | `blackpoint-db` | `blackpoint-db.trout-paradise.ts.net:5432` |
-| notifier | `notifier-db` | `notifier-db.trout-paradise.ts.net:5432` |
+| Database | Env | Hostname | Access |
+|----------|-----|----------|--------|
+| blackpoint-api | dev | `blackpoint-db-dev` | `blackpoint-db-dev.trout-paradise.ts.net:5432` |
+| blackpoint-api | prd | `blackpoint-db-prd` | `blackpoint-db-prd.trout-paradise.ts.net:5432` |
+| notifier | dev | `notifier-db-dev` | `notifier-db-dev.trout-paradise.ts.net:5432` |
+| notifier | prd | `notifier-db-prd` | `notifier-db-prd.trout-paradise.ts.net:5432` |
+
+**Note:** Hostname = `{tailscale.hostname}-{env}` (env suffix always added)
 
 ## 4. Tailscale ACLs
 
@@ -102,7 +106,7 @@ spec:
 ### psql
 
 ```bash
-psql "host=blackpoint-db.trout-paradise.ts.net \
+psql "host=blackpoint-db-dev.trout-paradise.ts.net \
       port=5432 \
       dbname=blackpoint \
       user=myuser@company.com \
@@ -115,7 +119,7 @@ psql "host=blackpoint-db.trout-paradise.ts.net \
 ### DataGrip / IntelliJ
 
 ```
-Host: blackpoint-db.trout-paradise.ts.net
+Host: blackpoint-db-dev.trout-paradise.ts.net
 Port: 5432
 Database: blackpoint
 User: myuser@company.com
