@@ -331,122 +331,69 @@ T=24h: Old credentials expire → Complete access loss
 
 ## 6. Adding New Database (GitOps)
 
-All configuration is in `infrastructure/charts/vault-config/values.yaml`.
+Only **3 steps** required! Connections, roles, policies, and groups are **auto-generated**.
 
-### Step 1: Add Database Connection
+### Step 1: Add to values.yaml
 
-```yaml
-database:
-  connections:
-    # Existing
-    blackpoint-dev:
-      plugin: postgresql-database-plugin
-      host: "blackpoint-api-main-db-dev-cluster-rw.blackpoint-api-dev.svc"
-      port: 5432
-      database: blackpoint
-      sslmode: require
-      username: "postgres"
-      secretRef:
-        namespace: blackpoint-api-dev
-        name: blackpoint-api-main-db-dev-cluster-superuser
-        key: password
-      allowedRoles:
-        - blackpoint-dev-readonly
-        - blackpoint-dev-readwrite
-        - blackpoint-dev-admin
-
-    # NEW DATABASE - add here
-    notifier-dev:
-      plugin: postgresql-database-plugin
-      host: "notifier-main-db-dev-cluster-rw.notifier-dev.svc"
-      port: 5432
-      database: notifier
-      sslmode: require
-      username: "postgres"
-      secretRef:
-        namespace: notifier-dev
-        name: notifier-main-db-dev-cluster-superuser
-        key: password
-      allowedRoles:
-        - notifier-dev-readonly
-        - notifier-dev-readwrite
-        - notifier-dev-admin
-```
-
-### Step 2: Add Database Roles
+File: `infrastructure/charts/vault-config/values.yaml`
 
 ```yaml
 database:
-  roles:
-    # NEW ROLES
-    notifier-dev-readonly:
-      dbName: notifier-dev
-      defaultTtl: "24h"
-      maxTtl: "72h"
-      creationStatements: |
-        CREATE ROLE "{{name}}" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';
-        GRANT CONNECT ON DATABASE notifier TO "{{name}}";
-        GRANT USAGE ON SCHEMA public TO "{{name}}";
-        GRANT SELECT ON ALL TABLES IN SCHEMA public TO "{{name}}";
-      revocationStatements: |
-        DROP ROLE IF EXISTS "{{name}}";
+  databases:
+    # Existing databases...
+    blackpoint:
+      dev:
+        # ...
 
-    notifier-dev-readwrite:
-      dbName: notifier-dev
-      defaultTtl: "24h"
-      maxTtl: "72h"
-      creationStatements: |
-        CREATE ROLE "{{name}}" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';
-        GRANT CONNECT ON DATABASE notifier TO "{{name}}";
-        GRANT USAGE ON SCHEMA public TO "{{name}}";
-        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{{name}}";
-        GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO "{{name}}";
-      revocationStatements: |
-        DROP ROLE IF EXISTS "{{name}}";
+    # NEW DATABASE - just add here (10 lines)
+    notifier:
+      dev:
+        host: "notifier-main-db-dev-cluster-rw.notifier-dev.svc"
+        port: 5432
+        database: notifier
+        sslmode: require
+        username: "postgres"
+        secretRef:
+          namespace: notifier-dev
+          name: notifier-main-db-dev-cluster-superuser
+          key: password
+        access: [readonly, readwrite]  # Choose access levels
 ```
 
-### Step 3: Add Vault Policies
+### Step 2: Add Auth0 Role
 
-```yaml
-policies:
-  database-notifier-dev-readonly: |
-    path "database/creds/notifier-dev-readonly" {
-      capabilities = ["read"]
-    }
+In **Auth0 Dashboard** → **User Management** → **Roles**:
+1. Create role: `db-app-notifier`
+2. Assign to users who need access
 
-  database-notifier-dev-readwrite: |
-    path "database/creds/notifier-dev-readwrite" {
-      capabilities = ["read"]
-    }
-    path "database/creds/notifier-dev-readonly" {
-      capabilities = ["read"]
-    }
-```
-
-### Step 4: Add External Groups
-
-```yaml
-externalGroups:
-  - name: "db:notifier:dev:readonly"
-    policies:
-      - "database-notifier-dev-readonly"
-  - name: "db:notifier:dev:readwrite"
-    policies:
-      - "database-notifier-dev-readwrite"
-```
-
-### Step 5: Add Auth0 Roles
-
-In Auth0 Dashboard → User Management → Roles:
-- Create `db-app-notifier` role
-- Assign to users who need notifier database access
-
-### Step 6: Deploy
+### Step 3: Deploy
 
 ```bash
 git add -A && git commit -m "feat(vault): add notifier-dev database" && git push
 # ArgoCD syncs automatically
 ```
+
+### What Gets Auto-Generated
+
+From 10 lines of config, the system creates:
+
+| Resource | Generated |
+|----------|-----------|
+| Connection | `notifier-dev` |
+| Roles | `notifier-dev-readonly`, `notifier-dev-readwrite` |
+| Policies | `database-notifier-dev-readonly`, `database-notifier-dev-readwrite` |
+| External Groups | `db:notifier:dev:readonly`, `db:notifier:dev:readwrite` |
+| RBAC | Role/RoleBinding in `notifier-dev` namespace |
+
+### Access Templates
+
+Access levels are defined once in `database.accessTemplates`:
+
+| Level | TTL | Permissions |
+|-------|-----|-------------|
+| `readonly` | 24h | SELECT |
+| `readwrite` | 24h | SELECT, INSERT, UPDATE, DELETE |
+| `admin` | 8h | ALL PRIVILEGES |
 
 ## 7. Comparison: PKI vs Database Secrets
 
