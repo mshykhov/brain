@@ -108,17 +108,28 @@ spec:
 
 ## 5. Connection Examples
 
+### Get Credentials from Vault
+
+```bash
+# Login (once per 7 days)
+vault login -method=oidc
+
+# Get dynamic credentials (once per day)
+vault read database/creds/blackpoint-dev-readonly
+# username    v-oidc-readonly-HfgL2k
+# password    A1b2C3d4-xxxxx
+# ttl         24h
+```
+
 ### psql
 
 ```bash
 psql "host=blackpoint-db-dev.trout-paradise.ts.net \
       port=5432 \
       dbname=blackpoint \
-      user=myuser@company.com \
-      sslmode=verify-full \
-      sslcert=~/.pg/client.crt \
-      sslkey=~/.pg/client.key \
-      sslrootcert=~/.pg/ca.crt"
+      user=v-oidc-readonly-HfgL2k \
+      password=A1b2C3d4-xxxxx \
+      sslmode=require"
 ```
 
 ### DataGrip / IntelliJ
@@ -127,11 +138,9 @@ psql "host=blackpoint-db-dev.trout-paradise.ts.net \
 Host: blackpoint-db-dev.trout-paradise.ts.net
 Port: 5432
 Database: blackpoint
-User: myuser@company.com
-SSL Mode: verify-full
-CA File: ~/.pg/ca.crt
-Client Certificate: ~/.pg/client.crt
-Client Key: ~/.pg/client.key
+User: <from vault read>
+Password: <from vault read>
+SSL Mode: require
 ```
 
 ## 6. Security Layers
@@ -146,17 +155,19 @@ Client Key: ~/.pg/client.key
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Layer 2: mTLS Certificate                                       │
-│ - Client must present valid certificate from Vault CA           │
-│ - Certificate CN maps to database user                          │
+│ Layer 2: Vault Dynamic Credentials                              │
+│ - User authenticates via Vault OIDC (Auth0 SSO)                 │
+│ - Auth0 roles determine database access (3D cross-product)      │
+│ - Vault generates temporary username/password (24h TTL)         │
+│ - Role change in Auth0 → immediate denial of new credentials    │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Layer 3: PostgreSQL RBAC                                        │
-│ - Database user has specific GRANT permissions                  │
-│ - readonly_user: SELECT only                                    │
-│ - readwrite_user: SELECT, INSERT, UPDATE, DELETE                │
+│ Layer 3: PostgreSQL Dynamic Users                               │
+│ - Vault creates temporary DB user: v-oidc-readonly-HfgL2k       │
+│ - User has specific GRANT permissions based on role             │
+│ - Auto-dropped when TTL expires                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
