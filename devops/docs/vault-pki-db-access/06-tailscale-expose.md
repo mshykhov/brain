@@ -7,16 +7,19 @@ deploy/databases/blackpoint-api/postgres/main.yaml
   └── tailscale.enabled: true
         │
         ▼
-ApplicationSet (tailscale-database-services)
+ApplicationSet (postgres-clusters)
   └── scans databases/*/postgres/*.yaml
+  └── renders 2 charts per database:
         │
-        ▼
-Helm Chart (tailscale-service)
-  └── creates LoadBalancer Service via ProxyGroup
+        ├── CloudNativePG Cluster chart
+        │     └── creates PostgreSQL cluster
         │
-        ▼
-Tailscale Operator + ProxyGroup (ingress-proxies)
-  └── exposes to tailnet: {hostname}.trout-paradise.ts.net:5432
+        └── tailscale-service chart (if tailscale.enabled)
+              └── creates LoadBalancer Service via ProxyGroup
+                    │
+                    ▼
+              Tailscale Operator + ProxyGroup (ingress-proxies)
+                └── exposes to tailnet: {hostname}-{env}.trout-paradise.ts.net:5432
 ```
 
 ## 1. Database Configuration (Decentralized)
@@ -37,13 +40,15 @@ cluster:
 # Tailscale exposure
 tailscale:
   enabled: true
-  hostname: blackpoint-db  # => blackpoint-db.trout-paradise.ts.net:5432
+  hostname: blackpoint-db  # => blackpoint-db-{env}.trout-paradise.ts.net:5432
 ```
 
 ## 2. How It Works
 
-1. **ApplicationSet** сканирует `databases/*/postgres/*.yaml`
-2. Если `tailscale.enabled: true` → создаёт Application
+1. **ApplicationSet** `postgres-clusters` сканирует `databases/*/postgres/*.yaml`
+2. Для каждой БД создаёт Application с **двумя источниками**:
+   - CloudNativePG Cluster chart → создаёт PostgreSQL кластер
+   - tailscale-service chart → создаёт LoadBalancer Service (если `tailscale.enabled: true`)
 3. **Helm chart** рендерит LoadBalancer Service:
 
 ```yaml
@@ -52,7 +57,7 @@ kind: Service
 metadata:
   annotations:
     tailscale.com/proxy-group: ingress-proxies  # HA via ProxyGroup
-    tailscale.com/hostname: blackpoint-db
+    tailscale.com/hostname: blackpoint-db-dev
 spec:
   type: LoadBalancer
   loadBalancerClass: tailscale
@@ -63,7 +68,7 @@ spec:
     - port: 5432
 ```
 
-4. **Tailscale Operator** видит Service и создаёт proxy
+4. **Tailscale Operator** видит Service и создаёт proxy через ProxyGroup
 5. Доступ: `blackpoint-db-dev.trout-paradise.ts.net:5432`
 
 ## 3. Current Databases
@@ -160,7 +165,7 @@ Client Key: ~/.pg/client.key
 | File | Purpose |
 |------|---------|
 | `infrastructure/charts/tailscale-service/` | Helm chart for TS LoadBalancer |
-| `infrastructure/apps/templates/data/tailscale-database-services.yaml` | ApplicationSet |
+| `infrastructure/apps/templates/data/postgres-clusters.yaml` | ApplicationSet (includes tailscale-service as 2nd source) |
 | `deploy/databases/*/postgres/main.yaml` | Database configs with `tailscale:` section |
 
 ## Next Steps
