@@ -58,40 +58,91 @@
 **Actions** → **Library** → **Add Vault Roles** → Edit
 
 ```javascript
+/**
+ * Auth0 Post-Login Action: Compute Vault Database Roles
+ *
+ * Transforms modular Auth0 roles into Vault-compatible role format.
+ *
+ * Input roles (assigned in Auth0):
+ *   - db-readonly, db-readwrite, db-admin (access levels)
+ *   - db-app-{name} (database access, e.g., db-app-blackpoint)
+ *   - db-env-{env} (environment access, e.g., db-env-dev)
+ *
+ * Output roles (sent to Vault):
+ *   - db:{app}:{env}:{access} (e.g., db:blackpoint:dev:readonly)
+ *
+ * Configuration is in Vault: infrastructure/charts/vault-config/values.yaml
+ */
 exports.onExecutePostLogin = async (event, api) => {
   const namespace = 'https://vault';
   const roles = event.authorization?.roles || [];
 
-  // Extract role categories
+  // Validation constants
+  const VALID_ACCESS_LEVELS = ['readonly', 'readwrite', 'admin'];
+  const VALID_ENVIRONMENTS = ['dev', 'prd'];
+
+  console.log(`[Vault Roles] Processing user: ${event.user.email}`);
+  console.log(`[Vault Roles] Input roles: ${JSON.stringify(roles)}`);
+
+  // Extract and validate role categories
   const accessLevels = roles
     .filter(r => ['db-readonly', 'db-readwrite', 'db-admin'].includes(r))
     .map(r => r.replace('db-', ''));
 
   const apps = roles
     .filter(r => r.startsWith('db-app-'))
-    .map(r => r.replace('db-app-', ''));
+    .map(r => r.replace('db-app-', ''))
+    .filter(app => {
+      // Validate app name format (lowercase, alphanumeric, hyphens)
+      const valid = /^[a-z][a-z0-9-]*$/.test(app);
+      if (!valid) console.warn(`[Vault Roles] Invalid app name: ${app}`);
+      return valid;
+    });
 
   const envs = roles
     .filter(r => r.startsWith('db-env-'))
-    .map(r => r.replace('db-env-', ''));
+    .map(r => r.replace('db-env-', ''))
+    .filter(env => {
+      const valid = VALID_ENVIRONMENTS.includes(env);
+      if (!valid) console.warn(`[Vault Roles] Invalid environment: ${env}`);
+      return valid;
+    });
 
   // Compute 3D cross-product: app × env × access
-  // Example: db-app-blackpoint + db-env-dev + db-readonly → db:blackpoint:dev:readonly
   const computedRoles = [];
   for (const app of apps) {
     for (const env of envs) {
       for (const access of accessLevels) {
-        computedRoles.push(`db:${app}:${env}:${access}`);
+        const role = `db:${app}:${env}:${access}`;
+        computedRoles.push(role);
       }
     }
   }
 
   // Add non-db roles (infra-admins, argocd-admins, etc.)
   const otherRoles = roles.filter(r => !r.startsWith('db-'));
+  const allRoles = [...computedRoles, ...otherRoles];
 
-  api.idToken.setCustomClaim(`${namespace}/roles`, [...computedRoles, ...otherRoles]);
+  console.log(`[Vault Roles] Computed roles: ${JSON.stringify(computedRoles)}`);
+  console.log(`[Vault Roles] Total roles for Vault: ${allRoles.length}`);
+
+  // Set claims on both ID token and access token
+  api.idToken.setCustomClaim(`${namespace}/roles`, allRoles);
+  api.accessToken.setCustomClaim(`${namespace}/roles`, allRoles);
 };
 ```
+
+### Validation Rules
+
+| Component | Format | Example |
+|-----------|--------|---------|
+| App name | `^[a-z][a-z0-9-]*$` | `blackpoint`, `my-api` |
+| Environment | `dev` or `prd` | `dev` |
+| Access level | `readonly`, `readwrite`, `admin` | `readonly` |
+
+### Debugging
+
+View logs in **Auth0 Dashboard** → **Monitoring** → **Logs** → filter by user email.
 
 ### Example
 
