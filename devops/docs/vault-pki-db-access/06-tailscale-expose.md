@@ -1,87 +1,79 @@
 # Expose Databases via Tailscale
 
-## 1. Expose Vault UI
+## Architecture
 
-### Add to protected-services
-
-`infrastructure/charts/protected-services/values.yaml`:
-
-```yaml
-services:
-  vault:
-    enabled: true
-    direct: true
-    namespace: vault
-    backend:
-      name: vault
-      port: 8200
+```
+deploy/databases/blackpoint-api/postgres/main.yaml
+  └── tailscale.enabled: true
+        │
+        ▼
+ApplicationSet (tailscale-database-services)
+  └── scans databases/*/postgres/*.yaml
+        │
+        ▼
+Helm Chart (tailscale-service)
+  └── creates LoadBalancer Service via ProxyGroup
+        │
+        ▼
+Tailscale Operator + ProxyGroup (ingress-proxies)
+  └── exposes to tailnet: {hostname}.trout-paradise.ts.net:5432
 ```
 
-Vault будет доступен по адресу: `https://vault.trout-paradise.ts.net`
+## 1. Database Configuration (Decentralized)
 
-## 2. Expose PostgreSQL (CNPG)
+Добавить `tailscale:` секцию в конфиг БД:
 
-### Option A: Via Tailscale Service
-
-`infrastructure/charts/protected-services/templates/tailscale-db.yaml`:
+`deploy/databases/blackpoint-api/postgres/main.yaml`:
 
 ```yaml
-{{- range $name, $db := .Values.databases }}
-{{- if $db.enabled }}
----
+cluster:
+  instances: 1
+  storage:
+    size: 5Gi
+  initdb:
+    database: blackpoint
+    owner: blackpoint
+
+# Tailscale exposure
+tailscale:
+  enabled: true
+  hostname: blackpoint-db  # => blackpoint-db.trout-paradise.ts.net:5432
+```
+
+## 2. How It Works
+
+1. **ApplicationSet** сканирует `databases/*/postgres/*.yaml`
+2. Если `tailscale.enabled: true` → создаёт Application
+3. **Helm chart** рендерит LoadBalancer Service:
+
+```yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $name }}-tailscale
-  namespace: {{ $db.namespace }}
   annotations:
-    tailscale.com/expose: "true"
-    tailscale.com/hostname: {{ $name }}
+    tailscale.com/proxy-group: ingress-proxies  # HA via ProxyGroup
+    tailscale.com/hostname: blackpoint-db
 spec:
-  type: ClusterIP
+  type: LoadBalancer
+  loadBalancerClass: tailscale
   selector:
-    cnpg.io/cluster: {{ $db.cluster }}
+    cnpg.io/cluster: blackpoint-api-main-db-dev-cluster
     role: primary
   ports:
     - port: 5432
-      targetPort: 5432
-      protocol: TCP
-{{- end }}
-{{- end }}
 ```
 
-### Database Configuration
+4. **Tailscale Operator** видит Service и создаёт proxy
+5. Доступ: `blackpoint-db.trout-paradise.ts.net:5432`
 
-`infrastructure/charts/protected-services/values.yaml`:
+## 3. Current Databases
 
-```yaml
-databases:
-  blackpoint-api-dev:
-    enabled: true
-    namespace: blackpoint-api-dev
-    cluster: blackpoint-api-dev-cluster
+| Database | Hostname | Access |
+|----------|----------|--------|
+| blackpoint-api | `blackpoint-db` | `blackpoint-db.trout-paradise.ts.net:5432` |
+| notifier | `notifier-db` | `notifier-db.trout-paradise.ts.net:5432` |
 
-  blackpoint-api-prd:
-    enabled: true
-    namespace: blackpoint-api-prd
-    cluster: blackpoint-api-prd-cluster
-
-  notifier-dev:
-    enabled: true
-    namespace: notifier-dev
-    cluster: notifier-dev-cluster
-```
-
-### Result
-
-Базы данных будут доступны:
-- `blackpoint-api-dev.trout-paradise.ts.net:5432`
-- `blackpoint-api-prd.trout-paradise.ts.net:5432`
-- `notifier-dev.trout-paradise.ts.net:5432`
-
-## 3. Tailscale ACLs
-
-Добавить в Tailscale ACL для ограничения доступа:
+## 4. Tailscale ACLs
 
 ```json
 {
@@ -105,42 +97,42 @@ databases:
 }
 ```
 
-## 4. Connection String Examples
+## 5. Connection Examples
 
-### PostgreSQL
+### psql
 
 ```bash
-# Via Tailscale hostname
-psql "host=blackpoint-api-dev.trout-paradise.ts.net \
+psql "host=blackpoint-db.trout-paradise.ts.net \
       port=5432 \
       dbname=blackpoint \
-      user=readonly_user \
+      user=myuser@company.com \
       sslmode=verify-full \
       sslcert=~/.pg/client.crt \
       sslkey=~/.pg/client.key \
       sslrootcert=~/.pg/ca.crt"
 ```
 
-### IntelliJ IDEA / DataGrip
+### DataGrip / IntelliJ
 
 ```
-Host: blackpoint-api-dev.trout-paradise.ts.net
+Host: blackpoint-db.trout-paradise.ts.net
 Port: 5432
 Database: blackpoint
-User: readonly_user
+User: myuser@company.com
 SSL Mode: verify-full
 CA File: ~/.pg/ca.crt
 Client Certificate: ~/.pg/client.crt
 Client Key: ~/.pg/client.key
 ```
 
-## 5. Security Layers
+## 6. Security Layers
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Layer 1: Tailscale Network                                      │
 │ - Only tailnet members can reach database ports                 │
 │ - Tailscale ACLs control which users/tags can connect           │
+│ - ProxyGroup provides HA (2 replicas)                           │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -158,6 +150,14 @@ Client Key: ~/.pg/client.key
 │ - readwrite_user: SELECT, INSERT, UPDATE, DELETE                │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+## 7. Files Reference
+
+| File | Purpose |
+|------|---------|
+| `infrastructure/charts/tailscale-service/` | Helm chart for TS LoadBalancer |
+| `infrastructure/apps/templates/data/tailscale-database-services.yaml` | ApplicationSet |
+| `deploy/databases/*/postgres/main.yaml` | Database configs with `tailscale:` section |
 
 ## Next Steps
 
