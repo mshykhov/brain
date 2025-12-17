@@ -6,9 +6,10 @@ Analysis of existing terraform documentation against official best practices fro
 
 | Document | Overall | Good Decisions | Issues |
 |----------|---------|----------------|--------|
-| 00-research.md | **Excellent** | 8 | 1 |
+| 00-research.md | **Good** | 8 | 1 |
 | 01-setup-guide.md | **Good** | 6 | 3 |
-| 02-auth0-bootstrap.md | **Excellent** | 5 | 1 |
+| 02-auth0-bootstrap.md | **Good** | 5 | 1 |
+| final-research-1.md | **Excellent** | 10 | 3 |
 
 ---
 
