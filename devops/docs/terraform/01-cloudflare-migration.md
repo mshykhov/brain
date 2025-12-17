@@ -456,10 +456,10 @@ After imports removed, `existing_tunnel_id` variable is no longer needed.
 ## Next Steps
 
 1. ✅ Fix cache rules authentication error (added Account Rulesets Edit)
-2. ⏳ Get tunnel_token output after successful apply
-3. ⏳ Update Doppler with CF_TUNNEL_TOKEN
-4. ⏳ Update ArgoCD charts (cloudflared --token)
-5. ⏳ Remove import blocks after first successful apply
+2. ✅ Automate tunnel_token → Doppler (via doppler_secret resource)
+3. ⏳ Update ArgoCD charts (cloudflared --token)
+4. ⏳ Remove import blocks after first successful apply
+5. ⏳ Update brain docs with final architecture
 
 ---
 
