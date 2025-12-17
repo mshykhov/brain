@@ -1,6 +1,6 @@
 # Vault Setup
 
-## ArgoCD Application
+## 1. ArgoCD Application
 
 ```yaml
 # infrastructure/apps/templates/core/vault.yaml
@@ -18,57 +18,78 @@ spec:
       helm:
         valueFiles:
           - $values/helm-values/core/vault.yaml
-    - repoURL: {{ .Values.spec.source.repoURL }}
-      targetRevision: {{ .Values.spec.source.targetRevision }}
+    - repoURL: <repo>
       ref: values
   destination:
-    server: {{ .Values.spec.destination.server }}
     namespace: vault
 ```
 
-## Initialize Vault
-
-После деплоя Vault нужно инициализировать (один раз):
+## 2. Initialize Vault (первый раз)
 
 ```bash
-# Подключиться к поду
 kubectl exec -it vault-0 -n vault -- sh
 
-# Инициализация (сохранить вывод!)
+# Инициализация
 vault operator init -key-shares=1 -key-threshold=1
 
-# Unseal
-vault operator unseal <UNSEAL_KEY>
+# Сохрани: Root Token, Unseal Key
 ```
 
-## Сохранить в Doppler (shared)
+## 3. Сохранить в Doppler (shared)
 
 | Key | Value |
 |-----|-------|
-| `VAULT_ROOT_TOKEN` | Root token из init |
-| `VAULT_UNSEAL_KEY` | Unseal key из init |
+| VAULT_ROOT_TOKEN | Root token |
+| VAULT_UNSEAL_KEY | Unseal key |
 
-## vault-config Chart
+## 4. vault-config Chart
 
-Автоматическая конфигурация через Kubernetes Job:
+Автоматическая конфигурация через Kubernetes Job.
 
-- PKI Root CA (10 лет)
-- PKI Intermediate CA (5 лет)
-- PKI Roles: db-admin, db-readonly, db-readwrite
-- Vault Policies
+Что настраивается:
+- Database Secrets Engine (connections, roles)
 - OIDC Authentication (Auth0)
-- External Groups mapping
+- Vault Policies
+- External Groups (Auth0 → Vault mapping)
+- Audit logging
 
-Конфигурация в `infrastructure/charts/vault-config/values.yaml`.
+### Добавление новой БД
 
-## Проверка
+1. Добавить в `vault-config/values.yaml`:
+
+```yaml
+database:
+  databases:
+    myapp:
+      dev:
+        host: "myapp-db-dev-cluster-rw.myapp-dev.svc"
+        port: 5432
+        database: myapp
+        sslmode: require
+        username: "postgres"
+        secretRef:
+          namespace: myapp-dev
+          name: myapp-db-dev-cluster-superuser
+          key: password
+        access: [readonly, readwrite, admin]
+```
+
+2. Создать Auth0 роль: `db:myapp:dev:readonly` (и другие)
+
+3. Push → ArgoCD автоматически применит
+
+## 5. Проверка
 
 ```bash
-# PKI
+# Secrets engines
 vault secrets list
-vault read pki_int/cert/ca
+
+# Database connections
+vault list database/config
+
+# Database roles
+vault list database/roles
 
 # OIDC
 vault auth list
-vault read auth/oidc/config
 ```

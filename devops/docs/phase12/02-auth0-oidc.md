@@ -1,39 +1,37 @@
-# Auth0 OIDC Integration for Vault
+# Auth0 OIDC Integration
 
 ## 1. Create Auth0 Application
-
-В Auth0 Dashboard:
 
 1. **Applications** → **Create Application**
 2. Name: `Vault`
 3. Type: **Regular Web Application**
 4. Settings:
-   - **Allowed Callback URLs**: `https://vault.trout-paradise.ts.net/ui/vault/auth/oidc/oidc/callback`
-   - **Allowed Logout URLs**: `https://vault.trout-paradise.ts.net`
-5. Save и скопируй:
-   - Client ID → `infrastructure/apps/values.yaml`
-   - Client Secret → Doppler
+   - Callback URL: `https://vault.{tailnet}.ts.net/ui/vault/auth/oidc/oidc/callback`
+   - Logout URL: `https://vault.{tailnet}.ts.net`
+5. Save и скопируй Client ID / Client Secret
 
 ## 2. Auth0 Roles
 
 **User Management** → **Roles** → Create:
 
-| Name | Vault Policy | Описание |
-|------|--------------|----------|
-| `db-admin` | pki-admin | Full PKI access |
-| `db-readonly` | pki-readonly | Issue readonly certs |
-| `db-readwrite` | pki-readwrite | Issue readwrite certs |
+| Role | Format | Example |
+|------|--------|---------|
+| DB access | db:{app}:{env}:{access} | db:blackpoint:dev:readonly |
 
-## 3. Auth0 Action
+Примеры:
+- `db:blackpoint:dev:readonly` - чтение dev БД blackpoint
+- `db:blackpoint:prd:admin` - админ prod БД blackpoint
+- `db:notifier:dev:readwrite` - запись dev БД notifier
 
-**Actions** → **Library** → **Build Custom** → **Post Login**
+## 3. Auth0 Action (Post Login)
+
+**Actions** → **Library** → **Build Custom**
 
 Name: `Add Vault Roles`
 
 ```javascript
 exports.onExecutePostLogin = async (event, api) => {
   const namespace = 'https://vault/roles';
-
   if (event.authorization) {
     const roles = event.authorization.roles || [];
     api.idToken.setCustomClaim(namespace, roles);
@@ -42,7 +40,7 @@ exports.onExecutePostLogin = async (event, api) => {
 };
 ```
 
-**Deploy** и добавить в **Actions** → **Flows** → **Login**.
+Deploy и добавить в **Login Flow**.
 
 ## 4. Store Credentials
 
@@ -56,43 +54,21 @@ VAULT_OIDC_CLIENT_SECRET=<client_secret>
 
 ```yaml
 vault:
-  oidcClientId: Y8QpXWQDlKjhTUMaDvnkb5sbsufiHLyP
+  oidcClientId: <client_id>
+  oidcDiscoveryUrl: https://your-tenant.auth0.com/
 ```
 
 ## 5. Vault Configuration
 
 vault-config chart автоматически создаёт:
 
-### External Groups
+- OIDC auth method
+- Default role с groups claim `https://vault/roles`
+- External groups mapping Auth0 roles → Vault policies
 
-```yaml
-externalGroups:
-  - name: db-admin
-    policies: [pki-admin]
-  - name: db-readonly
-    policies: [pki-readonly]
-  - name: db-readwrite
-    policies: [pki-readwrite]
-```
+## 6. Test SSO
 
-Auth0 role → Vault external group → Vault policy
-
-### OIDC Role
-
-```yaml
-oidc:
-  role:
-    groupsClaim: "https://vault/roles"
-```
-
-## 6. Test SSO Login
-
-1. Открыть `https://vault.trout-paradise.ts.net`
+1. Открыть `https://vault.{tailnet}.ts.net`
 2. Method: **OIDC**
-3. Role: **default**
-4. Sign in → Auth0 redirect
-5. Проверить policies в Vault UI
-
-## Next Steps
-
-→ [03-cnpg-certificates.md](03-cnpg-certificates.md)
+3. Sign in → Auth0 redirect
+4. Проверить assigned policies в правом верхнем углу
