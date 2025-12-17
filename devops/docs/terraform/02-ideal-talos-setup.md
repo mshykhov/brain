@@ -316,11 +316,18 @@ smhomelub-infra/              # Infrastructure secrets
 └── shared                    # K8s infrastructure workloads
     ├── CF_TUNNEL_TOKEN       ← Terraform cloudflare output
     ├── CF_API_TOKEN          ← For external-dns
-    ├── AUTH0_DOMAIN          ← Terraform auth0 output
-    ├── AUTH0_CLIENT_ID       ← oauth2-proxy app
     ├── AUTH0_CLIENT_SECRET   ← oauth2-proxy app
-    ├── TS_AUTHKEY            ← Terraform tailscale output
-    └── ... (other infra secrets)
+    ├── TS_OAUTH_CLIENT_SECRET
+    ├── VAULT_ROOT_TOKEN
+    ├── VAULT_OIDC_CLIENT_SECRET
+    ├── VAULT_UNSEAL_KEY
+    ├── OAUTH2_PROXY_COOKIE_SECRET
+    ├── OAUTH2_PROXY_REDIS_PASSWORD
+    ├── TELEGRAM_BOT_TOKEN
+    ├── PUSHOVER_API_TOKEN
+    ├── DOCKERHUB_PULL_TOKEN
+    ├── S3_ACCESS_KEY_ID      ← CNPG backups
+    └── S3_SECRET_ACCESS_KEY
 ```
 
 ---

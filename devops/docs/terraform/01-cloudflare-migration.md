@@ -6,10 +6,13 @@ Full tunnel control via Terraform + GitHub Actions CI/CD.
 
 | Resource | Status | Notes |
 |----------|--------|-------|
-| Tunnel | ✅ Imported | `k8s-tunnel` |
-| Tunnel Config | ✅ Created | Remotely-managed ingress |
-| R2 buckets | ✅ Imported | cnpg-backups (APAC), terraform-state (WEUR) |
-| Cache Rules | ✅ Created | Needed Account Rulesets permission |
+| Tunnel | ✅ Complete | `k8s-tunnel`, token mode |
+| Tunnel Config | ✅ Complete | Remotely-managed ingress |
+| R2 buckets | ✅ Complete | cnpg-backups (APAC), terraform-state (WEUR) |
+| Cache Rules | ✅ Complete | Needed Account Rulesets permission |
+| Doppler Integration | ✅ Complete | Auto-writes CF_TUNNEL_TOKEN to shared |
+| ExternalSecrets | ✅ Complete | All migrated to doppler-infra-shared |
+| cloudflared | ✅ Complete | Token mode, no ConfigMap |
 
 ## Architecture
 
@@ -30,12 +33,15 @@ Full tunnel control via Terraform + GitHub Actions CI/CD.
                             │
 ┌─────────────────────────────────────────────────────────────┐
 │                      DOPPLER                                 │
-│  Project: smhomelub-infra / prd                             │
-│  Secrets:                                                    │
-│    - R2_ACCESS_KEY_ID                                       │
-│    - R2_SECRET_ACCESS_KEY                                   │
-│    - CLOUDFLARE_API_TOKEN                                   │
-│  Sync: GitHub Actions → smhomelab-infrastructure            │
+│  Project: smhomelub-infra                                   │
+│                                                              │
+│  cicd (GitHub Actions Sync):                                │
+│    - R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY                │
+│    - CLOUDFLARE_API_TOKEN, DOPPLER_TOKEN                   │
+│                                                              │
+│  shared (K8s via ExternalSecrets):                          │
+│    - CF_TUNNEL_TOKEN ← Terraform output                    │
+│    - CF_API_TOKEN, AUTH0_*, VAULT_*, etc.                  │
 └─────────────────────────────────────────────────────────────┘
                             │
                             ▼
@@ -115,6 +121,10 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 4.0"
     }
+    doppler = {
+      source  = "DopplerHQ/doppler"
+      version = "~> 1.0"
+    }
     random = {
       source  = "hashicorp/random"
       version = "~> 3.0"
@@ -143,13 +153,6 @@ terraform {
 ### tunnel.tf
 
 ```hcl
-# Import existing tunnel (Terraform 1.5+ import block)
-# Remove this block after first successful apply
-import {
-  to = cloudflare_zero_trust_tunnel_cloudflared.main
-  id = "${var.cloudflare_account_id}/${var.existing_tunnel_id}"
-}
-
 resource "random_id" "tunnel_secret" {
   byte_length = 32
 }
@@ -174,25 +177,31 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "main" {
     }
   }
 }
+
+# Write tunnel token to Doppler for cloudflared deployment
+resource "doppler_secret" "tunnel_token" {
+  project = "smhomelub-infra"
+  config  = "shared"
+  name    = "CF_TUNNEL_TOKEN"
+  value   = cloudflare_zero_trust_tunnel_cloudflared.main.tunnel_token
+}
 ```
 
 ### r2.tf
 
 ```hcl
-import {
-  to = cloudflare_r2_bucket.cnpg_backups
-  id = "${var.cloudflare_account_id}/cnpg-backups"
-}
-
-import {
-  to = cloudflare_r2_bucket.terraform_state
-  id = "${var.cloudflare_account_id}/terraform-state"
-}
-
+# CNPG database backups
 resource "cloudflare_r2_bucket" "cnpg_backups" {
   account_id = var.cloudflare_account_id
   name       = "cnpg-backups"
   location   = "APAC"
+}
+
+# Terraform state backend
+# DR: Create bucket manually before first terraform init
+import {
+  to = cloudflare_r2_bucket.terraform_state
+  id = "${var.cloudflare_account_id}/terraform-state"
 }
 
 resource "cloudflare_r2_bucket" "terraform_state" {
