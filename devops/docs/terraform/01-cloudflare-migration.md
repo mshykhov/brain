@@ -332,6 +332,7 @@ jobs:
 | `R2_ACCESS_KEY_ID` | From Step 2 |
 | `R2_SECRET_ACCESS_KEY` | From Step 2 |
 | `CLOUDFLARE_API_TOKEN` | From Step 1 |
+| `DOPPLER_TOKEN` | From Step 6 (added later) |
 
 ### Step 4: Setup Doppler GitHub Sync
 
@@ -346,23 +347,47 @@ jobs:
 1. Cloudflare Dashboard → gaynance.com → Caching → Cache Rules
 2. Delete all existing rules (Terraform will recreate them)
 
+### Step 6: Create Doppler Service Token for Terraform
+
+1. Doppler → Project `smhomelub-infra` → Config `prd` → Access tab
+2. Generate → Service Token
+3. ✅ Enable **Write access**
+4. Name: `terraform-write`
+5. Copy the token
+6. Add as secret in same `smhomelub-infra/prd`:
+   - Name: `DOPPLER_TOKEN`
+   - Value: the copied token
+7. GitHub Sync will automatically sync to GitHub Secrets
+
+> **Why Service Token?** Least privilege - only access to `smhomelub-infra/prd`, not all projects.
+
 ---
 
 ## Migration: cloudflared to Token Mode
 
-After Terraform successfully applies, migrate cloudflared from config file to token mode.
+After Terraform successfully applies, `CF_TUNNEL_TOKEN` is automatically written to Doppler.
 
-### Step 1: Get tunnel_token
+### How it works (fully automated)
 
-```bash
-cd infrastructure/terraform/cloudflare
-terraform output -raw tunnel_token
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    TERRAFORM APPLY                           │
+│                                                              │
+│  1. Creates/updates Cloudflare tunnel                       │
+│  2. Writes tunnel_token to Doppler via doppler_secret       │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      DOPPLER                                 │
+│  CF_TUNNEL_TOKEN ← автоматически от Terraform               │
+│       │                                                      │
+│       └─→ ExternalSecrets → K8s Secret                      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Step 2: Add to Doppler
-
-1. Doppler → `smhomelub-infra` → `prd`
-2. Add secret: `CF_TUNNEL_TOKEN` = value from Step 1
+No manual steps required!
 
 ### Step 3: Update cloudflared Helm values
 
