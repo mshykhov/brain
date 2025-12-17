@@ -9,7 +9,7 @@ Full tunnel control via Terraform + GitHub Actions CI/CD.
 | Tunnel | ✅ Imported | `k8s-tunnel` |
 | Tunnel Config | ✅ Created | Remotely-managed ingress |
 | R2 buckets | ✅ Imported | cnpg-backups (APAC), terraform-state (WEUR) |
-| Cache Rules | ❌ Blocked | Authentication error - investigating |
+| Cache Rules | ✅ Created | Needed Account Rulesets permission |
 
 ## Architecture
 
@@ -91,11 +91,14 @@ infrastructure/
 |-------|------------|--------|
 | Account | Workers R2 Storage | Edit |
 | Account | Cloudflare Tunnel | Edit |
+| Account | Account Rulesets | Edit |
 | Zone | Zone | Edit |
 | Zone | Cache Rules | Edit |
 
 **Zone Resources:** gaynance.com only
 **Account Resources:** Smhomelub@gmail.com's Account
+
+> **Note:** `Account Rulesets Edit` is required for `cloudflare_ruleset` resource even for zone-level cache rules.
 
 ---
 
@@ -285,15 +288,153 @@ jobs:
 
 7. **Doppler GitHub Sync** - Use separate project `smhomelub-infra` for infrastructure secrets, separate from app secrets.
 
+8. **Cache rules conflict** - If Dashboard has existing cache rules, either import them or delete from Dashboard first.
+
+---
+
+## Setup Guide
+
+### Step 1: Create Cloudflare API Token
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → My Profile → API Tokens
+2. Create Token → Custom Token
+3. Add permissions:
+
+| Scope | Permission | Access |
+|-------|------------|--------|
+| Account | Workers R2 Storage | Edit |
+| Account | Cloudflare Tunnel | Edit |
+| Account | Account Rulesets | Edit |
+| Zone | Zone | Edit |
+| Zone | Cache Rules | Edit |
+
+4. Zone Resources: Include → Specific zone → `gaynance.com`
+5. Account Resources: Include → Specific account → your account
+6. Create Token → Copy the token
+
+### Step 2: Create R2 API Token
+
+1. Go to Cloudflare Dashboard → R2 Object Storage → Manage R2 API Tokens
+2. Create API Token
+3. Permissions: Object Read & Write
+4. Specify bucket: `terraform-state` (or All buckets)
+5. Copy Access Key ID and Secret Access Key
+
+### Step 3: Setup Doppler
+
+1. Go to [Doppler Dashboard](https://dashboard.doppler.com)
+2. Create project: `smhomelub-infra`
+3. Select environment: `prd`
+4. Add secrets:
+
+| Secret | Value |
+|--------|-------|
+| `R2_ACCESS_KEY_ID` | From Step 2 |
+| `R2_SECRET_ACCESS_KEY` | From Step 2 |
+| `CLOUDFLARE_API_TOKEN` | From Step 1 |
+
+### Step 4: Setup Doppler GitHub Sync
+
+1. Doppler → Project `smhomelub-infra` → Integrations
+2. Add Sync → GitHub Actions
+3. Select repository: `smhomelab-infrastructure`
+4. Environment: `prd`
+5. Sync → Secrets will appear in GitHub repo settings
+
+### Step 5: Delete existing Cache Rules (if any)
+
+1. Cloudflare Dashboard → gaynance.com → Caching → Cache Rules
+2. Delete all existing rules (Terraform will recreate them)
+
+---
+
+## Migration: cloudflared to Token Mode
+
+After Terraform successfully applies, migrate cloudflared from config file to token mode.
+
+### Step 1: Get tunnel_token
+
+```bash
+cd infrastructure/terraform/cloudflare
+terraform output -raw tunnel_token
+```
+
+### Step 2: Add to Doppler
+
+1. Doppler → `smhomelub-infra` → `prd`
+2. Add secret: `CF_TUNNEL_TOKEN` = value from Step 1
+
+### Step 3: Update cloudflared Helm values
+
+Change from config-based to token-based:
+
+```yaml
+# Before (config mode)
+cloudflared:
+  args:
+    - tunnel
+    - --config
+    - /etc/cloudflared/config.yaml
+    - run
+
+# After (token mode)
+cloudflared:
+  args:
+    - tunnel
+    - --no-autoupdate
+    - run
+    - --token
+    - $(CF_TUNNEL_TOKEN)
+  env:
+    - name: CF_TUNNEL_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: cloudflared-secrets
+          key: CF_TUNNEL_TOKEN
+```
+
+### Step 4: Remove ConfigMap
+
+Token mode doesn't need config.yaml ConfigMap - ingress rules come from Cloudflare API.
+
+### Step 5: Verify
+
+```bash
+kubectl logs -n cloudflared deployment/cloudflared
+# Should show: "Connection established" without config errors
+```
+
+---
+
+## Cleanup
+
+After successful migration:
+
+### Remove import blocks
+
+Edit `tunnel.tf` and `r2.tf` - remove all `import {}` blocks:
+
+```hcl
+# DELETE these blocks after first successful apply
+import {
+  to = cloudflare_zero_trust_tunnel_cloudflared.main
+  id = "${var.cloudflare_account_id}/${var.existing_tunnel_id}"
+}
+```
+
+### Remove existing_tunnel_id variable
+
+After imports removed, `existing_tunnel_id` variable is no longer needed.
+
 ---
 
 ## Next Steps
 
-1. ❌ Fix cache rules authentication error
-2. Get tunnel_token output after successful apply
-3. Update Doppler with CF_TUNNEL_TOKEN
-4. Update ArgoCD charts (cloudflared --token)
-5. Remove import blocks after first successful apply
+1. ✅ Fix cache rules authentication error (added Account Rulesets Edit)
+2. ⏳ Get tunnel_token output after successful apply
+3. ⏳ Update Doppler with CF_TUNNEL_TOKEN
+4. ⏳ Update ArgoCD charts (cloudflared --token)
+5. ⏳ Remove import blocks after first successful apply
 
 ---
 
