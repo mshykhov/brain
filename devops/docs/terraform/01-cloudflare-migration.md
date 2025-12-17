@@ -243,6 +243,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TF_VAR_doppler_token: ${{ secrets.DOPPLER_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -333,42 +334,49 @@ jobs:
 
 1. Go to [Doppler Dashboard](https://dashboard.doppler.com)
 2. Create project: `smhomelub-infra`
-3. Select environment: `prd`
-4. Add secrets:
+3. Create configs: `cicd` and `shared`
+4. Add secrets to `cicd`:
 
 | Secret | Value |
 |--------|-------|
 | `R2_ACCESS_KEY_ID` | From Step 2 |
 | `R2_SECRET_ACCESS_KEY` | From Step 2 |
 | `CLOUDFLARE_API_TOKEN` | From Step 1 |
-| `DOPPLER_TOKEN` | From Step 6 (added later) |
+| `DOPPLER_TOKEN` | Service Token with write access to `shared` |
 
 ### Step 4: Setup Doppler GitHub Sync
 
-1. Doppler → Project `smhomelub-infra` → Integrations
+1. Doppler → Project `smhomelub-infra` → Config `cicd` → Integrations
 2. Add Sync → GitHub Actions
 3. Select repository: `smhomelab-infrastructure`
-4. Environment: `prd`
-5. Sync → Secrets will appear in GitHub repo settings
+4. Sync → Secrets will appear in GitHub repo settings
 
 ### Step 5: Delete existing Cache Rules (if any)
 
 1. Cloudflare Dashboard → gaynance.com → Caching → Cache Rules
 2. Delete all existing rules (Terraform will recreate them)
 
-### Step 6: Create Doppler Service Token for Terraform
+### Step 6: Create Doppler Service Tokens
 
-1. Doppler → Project `smhomelub-infra` → Config `prd` → Access tab
+**For Terraform (write to shared):**
+1. Doppler → `smhomelub-infra` → Config `shared` → Access tab
 2. Generate → Service Token
 3. ✅ Enable **Write access**
 4. Name: `terraform-write`
-5. Copy the token
-6. Add as secret in same `smhomelub-infra/prd`:
-   - Name: `DOPPLER_TOKEN`
-   - Value: the copied token
-7. GitHub Sync will automatically sync to GitHub Secrets
+5. Add to `cicd` config as `DOPPLER_TOKEN`
 
-> **Why Service Token?** Least privilege - only access to `smhomelub-infra/prd`, not all projects.
+**For K8s ExternalSecrets (read from shared):**
+1. Doppler → `smhomelub-infra` → Config `shared` → Access tab
+2. Generate → Service Token (Read only)
+3. Name: `k8s-externalsecrets`
+4. Create K8s secret manually:
+```bash
+kubectl create secret generic doppler-token-infra-shared \
+  --namespace external-secrets \
+  --from-literal=dopplerToken="dp.st.shared.XXXX"
+```
+
+> **Why Service Tokens?** Least privilege - separate tokens for CI/CD and K8s.
 
 ---
 
@@ -466,9 +474,10 @@ After imports removed, `existing_tunnel_id` variable is no longer needed.
 
 1. ✅ Fix cache rules authentication error (added Account Rulesets Edit)
 2. ✅ Automate tunnel_token → Doppler (via doppler_secret resource)
-3. ⏳ Update ArgoCD charts (cloudflared --token)
-4. ⏳ Remove import blocks after first successful apply
-5. ⏳ Update brain docs with final architecture
+3. ✅ Update ArgoCD charts (cloudflared --token mode)
+4. ✅ Remove import blocks (kept terraform-state for DR)
+5. ✅ Migrate all ExternalSecrets to doppler-infra-shared
+6. ✅ Update brain docs with final architecture
 
 ---
 
