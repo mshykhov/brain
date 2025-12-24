@@ -37,4 +37,11 @@
     <apps:property name='label' value='Services/Google'/>
   </entry>
 
+  <entry>
+    <category term='filter'></category>
+    <title>Apple</title>
+    <apps:property name='from' value='@apple.com OR @email.apple.com OR @id.apple.com'/>
+    <apps:property name='label' value='Services/Apple'/>
+  </entry>
+
 </feed>
