@@ -376,6 +376,8 @@ Recovery contact — человек с Google аккаунтом, который
 - Можно добавить до 10 контактов
 - 7 дней ожидания после добавления
 
+**Совет:** Один человек может быть Recovery Contact для Gmail И Apple ID — нужен Google аккаунт + iPhone.
+
 Добавить: [g.co/recovery-contacts](https://g.co/recovery-contacts)
 
 ---
