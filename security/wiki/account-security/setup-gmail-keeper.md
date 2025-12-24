@@ -9,7 +9,7 @@
 ├── 2x YubiKey 5 NFC
 ├── Телефон с NFC
 ├── Компьютер
-├── Второй номер телефона (родственник/друг)
+├── Доверенный человек с Google аккаунтом (для Recovery Contact)
 └── Proton Mail аккаунт (или создать)
 ```
 
@@ -70,10 +70,13 @@
 
 1. [myaccount.google.com](https://myaccount.google.com) → Security
 2. Recovery email → добавь **Proton Mail**
-3. Recovery phone #1 → **свой номер**
-4. Recovery phone #2 → **номер доверенного человека** (родственник)
+3. Recovery phone → **свой номер**
+4. Recovery contact → **доверенный человек** (родственник/друг)
+   - Добавь на [g.co/recovery-contacts](https://g.co/recovery-contacts)
+   - Можно до 10 контактов
+   - 7 дней ожидания после добавления
 
-> Второй номер — независимый путь восстановления если потеряешь свой телефон.
+> Recovery contact — независимый путь восстановления если потеряешь телефон и все 2FA методы.
 
 ### 2.2 Добавить YubiKey (FIDO2)
 
@@ -168,9 +171,8 @@ Backup Codes:
 23456789
 [остальные 8 кодов]
 
-Recovery phones:
-1. +XXX XXX XXX (мой)
-2. +XXX XXX XXX (доверенный)
+Recovery phone: +XXX XXX XXX (мой)
+Recovery contact: [имя доверенного человека]
 
 === PROTON ===
 Email: твой@proton.me
@@ -250,9 +252,10 @@ shred -u recovery.txt
 - [ ] TOTP seeds доступны в Google Keep/Draft
 - [ ] Proton recovery codes доступны
 
-### Проверь второй recovery phone
+### Проверь Recovery Contact
 
-- [ ] Попроси доверенного человека подтвердить что номер работает
+- [ ] Убедись что доверенный человек принял invite
+- [ ] Прошло 7 дней с момента добавления
 
 ---
 
@@ -277,8 +280,8 @@ shred -u recovery.txt
 | 1 | Нормальный вход | Gmail pwd + YubiKey |
 | 2 | Потерял YubiKeys | Gmail pwd + Backup codes (Archive pwd → USB) |
 | 3 | Нет backup codes | Gmail pwd + Recovery email (Proton) |
-| 4 | Нет доступа к Proton | Gmail pwd + Recovery phone #1 |
-| 5 | Потерял свой телефон | Gmail pwd + Recovery phone #2 (доверенный) |
+| 4 | Нет доступа к Proton | Gmail pwd + Recovery phone |
+| 5 | Потерял свой телефон | Gmail pwd + Recovery contact (доверенный) |
 
 ### Proton
 
@@ -297,9 +300,9 @@ shred -u recovery.txt
 ## Независимость путей
 
 ```
-Recovery Phone #2 (доверенный) ─────────────────┐
+Recovery Contact (доверенный) ──────────────────┐
                                                 │
-Recovery Phone #1 (свой) ───────────────────────┤
+Recovery Phone (свой) ──────────────────────────┤
        │                                        │
        ▼                                        │
     Gmail ◄────────────────────────┐            │
@@ -318,8 +321,8 @@ Recovery Phone #1 (свой) ─────────────────
 Независимые точки входа:
 1. YubiKey (любой из двух)
 2. Archive password + USB
-3. Recovery phone #1 + Gmail password
-4. Recovery phone #2 + Gmail password (если потерял свой телефон)
+3. Recovery phone + Gmail password
+4. Recovery contact + Gmail password (если потерял телефон)
 ```
 
 ---
@@ -350,12 +353,16 @@ Recovery Phone #1 (свой) ─────────────────
 
 Если потерял все 2FA методы, Keeper Support может сбросить 2FA для индивидуальных пользователей. Потребуется подтверждение личности.
 
-### Доверенный человек
+### Recovery Contact (доверенный человек)
 
-Второй recovery phone должен быть у человека которому доверяешь. Он сможет получить SMS код для входа в твой Gmail, но:
-- Не знает твой Gmail пароль
-- Не имеет доступа к твоим данным
-- Только помогает восстановить доступ в экстренной ситуации
+Recovery contact — человек с Google аккаунтом, который может помочь восстановить доступ:
+- Получает запрос на верификацию (number matching)
+- Должен ответить в течение 15 минут
+- **НЕ получает доступ** к твоему аккаунту или данным
+- Можно добавить до 10 контактов
+- 7 дней ожидания после добавления
+
+Добавить: [g.co/recovery-contacts](https://g.co/recovery-contacts)
 
 ---
 

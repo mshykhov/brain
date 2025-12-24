@@ -21,7 +21,7 @@
 | Gmail | Вход в Gmail + recovery phone |
 | Archive = Proton | Encrypted file + Proton |
 
-С этими двумя паролями + recovery phone #2 можно восстановить ВСЁ.
+С этими двумя паролями + recovery contact можно восстановить ВСЁ.
 
 ### Hardware
 
@@ -42,13 +42,13 @@
 
 **Worst case (потерял всё):**
 ```
-Recovery phone #2 → Gmail → Google Keep (TOTP seeds)
-                         → Proton Drive → Encrypted file
-                         → Keeper → Все пароли
+Recovery contact → Gmail → Google Keep (TOTP seeds)
+                        → Proton Drive → Encrypted file
+                        → Keeper → Все пароли
 ```
 
 **Keeper:** Master pwd + YubiKey → TOTP → Recovery phrase
 
-**Gmail:** Gmail pwd + YubiKey → Backup codes → Recovery email → Recovery phone #1/#2
+**Gmail:** Gmail pwd + YubiKey → Backup codes → Recovery email → Recovery phone/contact
 
 **Proton:** Archive pwd + YubiKey → TOTP → Recovery codes → Recovery email/phone
