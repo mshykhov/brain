@@ -16,12 +16,14 @@
 ## Порядок настройки
 
 ```
-1. Gmail (создать, добавить YubiKeys)
-2. Proton (создать, добавить YubiKeys, TOTP)
+1. Gmail (создать, добавить YubiKeys, backup codes)
+2. Proton (создать, TOTP сначала!, потом YubiKeys)
 3. Gmail ← добавить Proton как recovery email
-4. Keeper (настроить YubiKeys, TOTP, recovery phrase)
+4. Keeper (TOTP сначала!, потом YubiKeys, recovery phrase + codes)
 5. Encrypted file → Proton Drive
 ```
+
+> **Важно:** В Proton и Keeper нужно сначала настроить TOTP, только потом Security Keys!
 
 ---
 
@@ -111,58 +113,50 @@
 
 ---
 
-## Шаг 3: Keeper
+## Шаг 4: Keeper
 
-### 3.1 Добавить YubiKey
+### 4.1 Добавить TOTP (сначала!)
+
+> **Важно:** В Keeper нужно сначала TOTP, потом Security Keys. TOTP также служит backup методом.
 
 1. Keeper Web Vault → Settings → Security
 2. Two-Factor Authentication → Edit
-3. Security Key → Add
-4. Вставь YubiKey #1 → нажми кнопку
-5. **Повтори для YubiKey #2**
+3. **Authenticator app** → включи
+4. **СТОП!** Сначала сохрани seed:
+   - Покажи QR код → нажми "Can't scan?" или "Enter key manually"
+   - Скопируй secret key → **сохрани в Notepad**
+5. Введи 6-значный код → подтверди
 
-### 3.2 Добавить Backup 2FA (TOTP)
-
-> **Важно:** Keeper требует backup 2FA метод при использовании Security Keys. Рекомендуется TOTP вместо SMS (защита от SIM swap атак).
+### 4.2 Добавить YubiKey (FIDO2)
 
 1. Settings → Security → Two-Factor Authentication
-2. Включи Google/Microsoft Authenticator (TOTP)
-3. **Сохрани TOTP seed в `recovery.txt`**
-4. Добавь в YubiKey (опционально) или любой authenticator
+2. **Security Key** → Add
+3. Вставь YubiKey #1 → нажми кнопку
+4. Дай имя: `YubiKey Primary`
+5. **Повтори для YubiKey #2** → `YubiKey Backup`
 
-### 3.3 Recovery Phrase
+### 4.3 Recovery Phrase
 
 1. Settings → Recovery Phrase
 2. Generate Recovery Phrase
-3. **Скопируй 24 слова в `recovery.txt`**
+3. **Скопируй 24 слова в Notepad**
 
 > Recovery phrase позволяет сбросить master password, но всё равно потребуется пройти 2FA.
 
-### 3.4 Настройки безопасности
+### 4.4 Recovery Codes
+
+1. Settings → Security → Two-Factor Authentication
+2. Recovery Codes → View/Generate
+3. **Скопируй все 8 кодов в Notepad**
+
+> Recovery codes — одноразовые коды для входа если нет YubiKey и TOTP.
+
+### 4.5 Настройки безопасности
 
 1. Settings → Security:
    - Logout Timer: **15 минут**
    - Device Approval: **ON**
 2. На телефоне: включи Biometrics
-
----
-
-## Шаг 4: Gmail Failsafe
-
-> **Цель:** Если потеряешь всё кроме доступа к recovery phone, сможешь восстановить через Gmail.
-
-### 4.1 Сохрани в Google Keep или Gmail Draft
-
-1. Открой [keep.google.com](https://keep.google.com) или создай Draft в Gmail
-2. Добавь:
-   - Keeper TOTP seed
-   - Proton TOTP seed
-   - Proton recovery codes
-
-**Это позволит:**
-- Войти в Gmail через recovery phone (свой или доверенного человека)
-- Получить TOTP seeds и recovery codes из Gmail
-- Восстановить Keeper и Proton
 
 ---
 
@@ -179,6 +173,11 @@ word13 word14 word15 word16 word17 word18
 word19 word20 word21 word22 word23 word24
 
 TOTP Secret: XXXXXXXXXXXXXXXX
+
+Recovery Codes:
+XXXXXXXX
+XXXXXXXX
+[остальные 6 кодов]
 
 === GMAIL ===
 Backup Codes:
@@ -253,19 +252,14 @@ shred -u recovery.txt
 
 ### Проверь TOTP backup
 
-- [ ] Keeper TOTP работает (Yubico Authenticator или Gmail seed)
-- [ ] Proton TOTP работает (Yubico Authenticator или Gmail seed)
+- [ ] Keeper TOTP работает (из Yubico Authenticator)
+- [ ] Proton TOTP работает (из Yubico Authenticator)
 
 ### Проверь Encrypted File
 
-- [ ] Расшифруй файл с USB
+- [ ] Расшифруй файл с Proton Drive
 - [ ] Проверь что все данные читаемы
-- [ ] Расшифруй копию с Proton Drive
-
-### Проверь Gmail Failsafe
-
-- [ ] TOTP seeds доступны в Google Keep/Draft
-- [ ] Proton recovery codes доступны
+- [ ] (Потом) Расшифруй копию с USB
 
 ### Проверь Recovery Contact
 
@@ -282,9 +276,9 @@ shred -u recovery.txt
 |---|----------|---------|
 | 1 | Нормальный вход | Master pwd + YubiKey |
 | 2 | Потерял 1 YubiKey | Master pwd + другой YubiKey |
-| 3 | Потерял оба YubiKey | Master pwd + TOTP (из Gmail или USB) |
-| 4 | Забыл Master pwd | Recovery phrase + 2FA |
-| 5 | Потерял телефон + YubiKeys | Gmail (2й recovery phone) → TOTP seed → Keeper |
+| 3 | Потерял оба YubiKey | Master pwd + TOTP (из Yubico Authenticator или USB) |
+| 4 | Нет TOTP | Master pwd + Recovery codes (USB или Proton Drive) |
+| 5 | Забыл Master pwd | Recovery phrase + 2FA |
 | 6 | Потерял YubiKeys + нет backup 2FA | Контакт Keeper Support (сброс 2FA) |
 | 7 | Залогинен на устройстве | Biometrics → Settings → Reset Master Password |
 
@@ -304,11 +298,11 @@ shred -u recovery.txt
 |---|----------|---------|
 | 1 | Нормальный вход | Archive pwd + YubiKey (FIDO2) |
 | 2 | Потерял 1 YubiKey | Archive pwd + другой YubiKey |
-| 3 | Потерял оба YubiKey | Archive pwd + TOTP seed (USB или Gmail) |
-| 4 | Нет TOTP seed | Archive pwd + Recovery codes (USB или Gmail) |
-| 5 | Забыл Archive pwd | Recovery email (Gmail) или Recovery phone |
+| 3 | Потерял оба YubiKey | Archive pwd + TOTP (Yubico Authenticator или USB) |
+| 4 | Нет TOTP | Archive pwd + Recovery codes (USB или Proton Drive) |
+| 5 | Забыл Archive pwd | Recovery email (Gmail) |
 
-> **Примечание:** При восстановлении через email/phone данные остаются зашифрованными. Нужен Archive pwd для расшифровки.
+> **Примечание:** При восстановлении через email данные остаются зашифрованными. Нужен Archive pwd для расшифровки.
 
 ---
 
@@ -320,22 +314,22 @@ Recovery Contact (доверенный) ─────────────�
 Recovery Phone (свой) ──────────────────────────┤
        │                                        │
        ▼                                        │
-    Gmail ◄────────────────────────┐            │
-       │                           │            │
-       │  ┌── TOTP seeds ─────────►│            │
-       │  │   Proton codes         │            │
-       │  │   (Google Keep)        │            │
-       ▼  │                        │            │
-   Keeper ◄───── Master pwd ───────┤            │
-       │                           │            │
-       ▼                           │            │
-   Proton ◄───── Archive pwd ──────┘            │
+    Gmail ◄─────────────────────────────────────┤
+       │                                        │
+       ▼                                        │
+   Proton Drive → recovery.7z                   │
+       │                                        │
+       ▼ (Archive pwd)                          │
+   Keeper recovery phrase → Master pwd reset    │
+       │                                        │
+       ▼                                        │
+   Все пароли восстановлены                     │
        │                                        │
        └─────── Recovery email (Gmail) ─────────┘
 
 Независимые точки входа:
 1. YubiKey (любой из двух)
-2. Archive password + USB
+2. Archive password + USB/Proton Drive
 3. Recovery phone + Gmail password
 4. Recovery contact + Gmail password (если потерял телефон)
 ```
@@ -344,13 +338,14 @@ Recovery Phone (свой) ──────────────────
 
 ## Важно помнить
 
-### 3 пароля в голове
+### 2 пароля в голове
 
 | Пароль | Для чего |
 |--------|----------|
-| Gmail | Вход в Gmail |
-| Keeper master | Вход в Keeper |
+| Keeper master | Вход в Keeper (там Gmail password) |
 | Archive = Proton | Encrypted file + Proton |
+
+> Gmail password хранится в Keeper (защищён YubiKey).
 
 ### Что защищает YubiKey
 
