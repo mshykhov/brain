@@ -22,7 +22,7 @@
     <category term='filter'></category>
     <title>miroha135</title>
     <apps:property name='hasTheWord' value='deliveredto:miroha135@gmail.com'/>
-    <apps:property name='label' value='~/miroha135'/>
+    <apps:property name='label' value='Fwd/miroha135'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
@@ -30,7 +30,7 @@
     <category term='filter'></category>
     <title>shykhovmyron</title>
     <apps:property name='hasTheWord' value='deliveredto:shykhovmyron@gmail.com'/>
-    <apps:property name='label' value='~/shykhovmyron'/>
+    <apps:property name='label' value='Fwd/shykhovmyron'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
@@ -38,7 +38,7 @@
     <category term='filter'></category>
     <title>shikhovmyron</title>
     <apps:property name='hasTheWord' value='deliveredto:shikhovmyron@gmail.com'/>
-    <apps:property name='label' value='~/shikhovmyron'/>
+    <apps:property name='label' value='Fwd/shikhovmyron'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
@@ -46,7 +46,7 @@
     <category term='filter'></category>
     <title>NAU</title>
     <apps:property name='hasTheWord' value='deliveredto:7417497@stud.nau.edu.ua'/>
-    <apps:property name='label' value='~/NAU'/>
+    <apps:property name='label' value='Fwd/NAU'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
@@ -54,7 +54,7 @@
     <category term='filter'></category>
     <title>family</title>
     <apps:property name='hasTheWord' value='deliveredto:shykhov.family@gmail.com'/>
-    <apps:property name='label' value='~/family'/>
+    <apps:property name='label' value='Fwd/family'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
@@ -62,7 +62,7 @@
     <category term='filter'></category>
     <title>mirosh125</title>
     <apps:property name='hasTheWord' value='deliveredto:mirosh125@gmail.com'/>
-    <apps:property name='label' value='~/mirosh125'/>
+    <apps:property name='label' value='Fwd/mirosh125'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
@@ -70,7 +70,7 @@
     <category term='filter'></category>
     <title>icloud</title>
     <apps:property name='hasTheWord' value='deliveredto:shykhovmyron@icloud.com'/>
-    <apps:property name='label' value='~/icloud'/>
+    <apps:property name='label' value='Fwd/icloud'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
