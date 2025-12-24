@@ -7,7 +7,6 @@
     <title>LinkedIn</title>
     <apps:property name='from' value='@linkedin.com OR @e.linkedin.com'/>
     <apps:property name='label' value='Services/LinkedIn'/>
-    <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
   <entry>
@@ -15,7 +14,6 @@
     <title>GitHub</title>
     <apps:property name='from' value='@github.com'/>
     <apps:property name='label' value='Services/GitHub'/>
-    <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
   <entry>
@@ -23,7 +21,6 @@
     <title>Keeper</title>
     <apps:property name='from' value='@keepersecurity.com'/>
     <apps:property name='label' value='Services/Keeper'/>
-    <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
   <entry>
@@ -31,7 +28,6 @@
     <title>X (Twitter)</title>
     <apps:property name='from' value='@x.com OR @twitter.com'/>
     <apps:property name='label' value='Services/X'/>
-    <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
   <entry>
@@ -39,8 +35,6 @@
     <title>Google</title>
     <apps:property name='from' value='@google.com OR @accounts.google.com'/>
     <apps:property name='label' value='Services/Google'/>
-    <apps:property name='shouldArchive' value='true'/>
-    <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
 </feed>
