@@ -10,89 +10,104 @@
 ├── Телефон с NFC
 ├── Компьютер
 ├── Доверенный человек с Google аккаунтом (для Recovery Contact)
-└── Proton Mail аккаунт (или создать)
+└── 7-Zip установлен
+```
+
+## Порядок настройки
+
+```
+1. Gmail (создать, добавить YubiKeys)
+2. Proton (создать, добавить YubiKeys, TOTP)
+3. Gmail ← добавить Proton как recovery email
+4. Keeper (настроить YubiKeys, TOTP, recovery phrase)
+5. Encrypted file → Proton Drive
 ```
 
 ---
 
-## Шаг 1: Proton Mail
+## Шаг 1: Gmail
 
 ### 1.1 Создать аккаунт
 
-1. Открой [proton.me](https://proton.me)
-2. Sign up → бесплатный план достаточно
-3. **Пароль = Archive password** (запомни!)
+1. Открой [accounts.google.com/signup](https://accounts.google.com/signup)
+2. Создай аккаунт (формат: `myronshykhov@gmail.com`)
+3. Пароль — сохрани в Keeper (потом)
 
 ### 1.2 Recovery options
+
+1. [myaccount.google.com](https://myaccount.google.com) → Security
+2. Recovery phone → **свой номер**
+3. Recovery contact → **доверенный человек** (родственник/друг)
+   - Добавь на [g.co/recovery-contacts](https://g.co/recovery-contacts)
+   - Можно до 10 контактов
+   - 7 дней ожидания после добавления
+
+> Recovery email (Proton) добавим позже.
+
+### 1.3 Добавить YubiKey (FIDO2)
+
+1. Security → 2-Step Verification → включи
+2. Passkeys and security keys → Add security key
+3. Вставь YubiKey #1 → нажми кнопку на ключе
+4. Дай имя: `YubiKey Primary`
+5. **Повтори для YubiKey #2** → `YubiKey Backup`
+
+### 1.4 Backup codes
+
+1. Security → 2-Step Verification
+2. Backup codes → Get backup codes
+3. **Скопируй все 10 кодов** — сохрани временно в Notepad
+
+---
+
+## Шаг 2: Proton Mail
+
+### 2.1 Создать аккаунт
+
+1. Открой [proton.me](https://proton.me)
+2. Sign up → бесплатный план ОК
+3. **Пароль = Archive password** (один из 2 паролей в голове!)
+
+### 2.2 Recovery options
 
 > **Важно:** Настрой recovery ДО включения 2FA.
 
 1. Settings → Account → Recovery
 2. Recovery email → добавь **Gmail**
-3. Recovery phone → добавь **свой номер**
+3. Recovery phone → **свой номер** (может не работать — ОК)
+4. Скачай **Recovery file**
 
-### 1.3 Добавить YubiKey (FIDO2)
+### 2.3 Добавить TOTP (сначала!)
 
-> **Основной метод** — фишинг-защита, как Gmail и Keeper.
-
-1. Settings → Security → Two-factor authentication
-2. Security keys → Add security key
-3. Вставь YubiKey #1 → нажми кнопку
-4. Дай имя: "YubiKey Primary"
-5. **Повтори для YubiKey #2** → "YubiKey Backup"
-
-### 1.4 Добавить TOTP (backup)
-
-> **Backup метод** — если FIDO2 не работает на устройстве.
+> **Важно:** В Proton нужно сначала TOTP, потом Security Keys.
 
 1. Settings → Security → Two-factor authentication
-2. Authenticator app → Set up
+2. **Authenticator app** → включи
 3. **СТОП!** Сначала сохрани seed:
-   - Нажми "Can't scan QR code?" или "Enter key manually"
-   - Скопируй secret key
-   - **Сохрани в `recovery.txt`**
-4. Добавь в Yubico Authenticator (опционально)
-5. Введи код → Confirm
+   - Нажми "Can't scan?" или покажи код вручную
+   - Скопируй secret key → **сохрани в Notepad**
+4. Введи 6-значный код → подтверди
 
-### 1.5 Recovery codes
+### 2.4 Добавить YubiKey (FIDO2)
 
-1. После настройки 2FA → Settings → Security
-2. Recovery codes → Generate
-3. **Скопируй все коды в `recovery.txt`**
+1. Settings → Security → Two-factor authentication
+2. **Security keys** → Add security key
+3. Вставь YubiKey #1 → нажми кнопку
+4. Дай имя: `YubiKey Primary`
+5. **Повтори для YubiKey #2** → `YubiKey Backup`
 
-> Каждый код одноразовый. Используется если потерял YubiKey и нет доступа к TOTP.
+### 2.5 Recovery codes
+
+1. Settings → Security → Recovery codes
+2. **Скопируй все коды** → сохрани в Notepad
 
 ---
 
-## Шаг 2: Gmail
-
-### 2.1 Recovery options
+## Шаг 3: Gmail ← Proton recovery
 
 1. [myaccount.google.com](https://myaccount.google.com) → Security
 2. Recovery email → добавь **Proton Mail**
-3. Recovery phone → **свой номер**
-4. Recovery contact → **доверенный человек** (родственник/друг)
-   - Добавь на [g.co/recovery-contacts](https://g.co/recovery-contacts)
-   - Можно до 10 контактов
-   - 7 дней ожидания после добавления
-
-> Recovery contact — независимый путь восстановления если потеряешь телефон и все 2FA методы.
-
-### 2.2 Добавить YubiKey (FIDO2)
-
-1. Security → 2-Step Verification → Get started
-2. Passkeys and security keys → Add security key
-3. Вставь YubiKey #1 → нажми кнопку на ключе
-4. Дай имя: "YubiKey Primary"
-5. **Повтори для YubiKey #2** → "YubiKey Backup"
-
-### 2.3 Backup codes
-
-1. Security → 2-Step Verification
-2. Backup codes → Get backup codes
-3. **Скопируй все 10 кодов в `recovery.txt`**
-
-> После использования код становится неактивным. Можно сгенерировать новые 10 кодов в любое время.
+3. Подтверди через код на Proton
 
 ---
 

@@ -14,14 +14,16 @@
 
 ## Quick Reference
 
-### 2 пароля = полное восстановление
+### 2 пароля в голове = полное восстановление
 
 | Пароль | Для чего |
 |--------|----------|
-| Gmail | Вход в Gmail + recovery phone |
+| Keeper master | Вход в Keeper (там Gmail password) |
 | Archive = Proton | Encrypted file + Proton |
 
 С этими двумя паролями + recovery contact можно восстановить ВСЁ.
+
+> Gmail password хранится в Keeper (защищён YubiKey).
 
 ### Hardware
 
@@ -33,22 +35,22 @@
 1x Ledger Nano X
 └── Crypto self-custody
 
-4x USB (водостойкие)
-├── 2x Tails OS (система + backup)
-└── 2x Archive (encrypted file + backup)
+USB + Cloud:
+├── 1x USB Archive (encrypted file) — когда купишь
+└── Proton Drive (cloud backup)
 ```
 
 ### Recovery paths
 
 **Worst case (потерял всё):**
 ```
-Recovery contact → Gmail → Google Keep (TOTP seeds)
-                        → Proton Drive → Encrypted file
-                        → Keeper → Все пароли
+Recovery contact → Gmail → Proton Drive → recovery.7z
+                        → Расшифровать (Archive pwd)
+                        → Keeper recovery phrase → Все пароли
 ```
 
-**Keeper:** Master pwd + YubiKey → TOTP → Recovery phrase
+**Keeper:** Master pwd + YubiKey → TOTP → Recovery phrase + Recovery codes
 
-**Gmail:** Gmail pwd + YubiKey → Backup codes → Recovery email → Recovery phone/contact
+**Gmail:** Gmail pwd + YubiKey → Backup codes → Recovery email (Proton) → Recovery contact
 
-**Proton:** Archive pwd + YubiKey → TOTP → Recovery codes → Recovery email/phone
+**Proton:** Archive pwd + YubiKey → TOTP → Recovery codes → Recovery email (Gmail)
