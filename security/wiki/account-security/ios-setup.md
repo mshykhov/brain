@@ -25,11 +25,57 @@
 
 ## 2. Apple ID Security
 
-1. Settings → [Твоё имя] → Sign-In & Security
+### 2.1 Two-Factor Authentication
+
+1. Settings → [Твоё имя] → **Sign-In & Security**
 2. Two-Factor Authentication: **ON** (должно быть по умолчанию)
-3. Security Keys → Add Security Key:
-   - Добавь YubiKey #1 (через NFC)
-   - Добавь YubiKey #2
+
+### 2.2 Добавить Security Keys (YubiKey)
+
+> **Требования:** iOS 16.3+, минимум 2 Security Keys
+
+1. Settings → [Твоё имя] → **Sign-In & Security**
+2. **Security Keys** → **Add Security Keys**
+3. Следуй инструкциям
+4. Приложи **YubiKey #1** к верхней части iPhone (NFC)
+5. Дождись подтверждения → дай имя: `YubiKey Primary`
+6. **Повтори для YubiKey #2** → `YubiKey Backup`
+
+> После добавления Security Keys, SMS-коды отключаются. Вход только через YubiKey.
+
+### 2.3 Recovery Key (28 символов)
+
+> **Важно:** Recovery Key позволяет восстановить Apple ID если потерял все устройства и YubiKeys.
+
+1. Settings → [Твоё имя] → **Sign-In & Security**
+2. **Account Recovery** → **Recovery Key**
+3. Включи → введи passcode
+4. **Запиши 28-символьный ключ** → сохрани в `recovery.txt`
+5. Подтверди ключ (ввод)
+
+```
+Формат: XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX
+Пример: A1B2-C3D4-E5F6-G7H8-I9J0-K1L2-M3N4
+```
+
+> **Храни отдельно от устройств!** Если потеряешь Recovery Key + все устройства + YubiKeys = потеря Apple ID навсегда.
+
+### 2.4 Recovery Contacts (опционально)
+
+Recovery Contact — доверенный человек который может помочь восстановить доступ.
+
+1. Settings → [Твоё имя] → **Sign-In & Security**
+2. **Account Recovery** → **Add Recovery Contact**
+3. Выбери человека из контактов (у него должен быть Apple ID + iOS 15+)
+
+> Recovery Contact НЕ получает доступ к твоим данным, только помогает подтвердить личность.
+
+### 2.5 Trusted Devices
+
+Список устройств которые могут получать коды подтверждения:
+
+1. Settings → [Твоё имя] → **Devices**
+2. Проверь список — удали неизвестные устройства
 
 ---
 
@@ -108,6 +154,31 @@ TOTP (Proton):
 
 ---
 
+## Apple ID Recovery Paths
+
+| # | Сценарий | Решение |
+|---|----------|---------|
+| 1 | Нормальный вход | Password + YubiKey |
+| 2 | Потерял 1 YubiKey | Password + другой YubiKey |
+| 3 | Потерял оба YubiKey | Recovery Key (28 символов) |
+| 4 | Нет Recovery Key | Recovery Contact + ожидание |
+| 5 | Забыл пароль + есть YubiKey | iforgot.apple.com + YubiKey |
+| 6 | Забыл пароль + нет YubiKey | Recovery Key |
+| 7 | Потерял ВСЁ | Recovery Contact (если настроен) |
+
+> **Worst case:** Потерял все устройства + оба YubiKey + Recovery Key + нет Recovery Contact = **потеря Apple ID навсегда**.
+
+### Что хранить в recovery.txt
+
+```
+=== APPLE ID ===
+Email: myronshykhov@gmail.com (или iCloud)
+Recovery Key: XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX
+Recovery Contact: [имя человека]
+```
+
+---
+
 ## Чеклист
 
 ### Базовая защита
@@ -115,8 +186,13 @@ TOTP (Proton):
 - [ ] Face ID настроен
 - [ ] Apple ID 2FA включён
 
-### YubiKey
-- [ ] YubiKey добавлен в Apple ID (опционально)
+### Apple ID Security Keys
+- [ ] YubiKey Primary добавлен
+- [ ] YubiKey Backup добавлен
+- [ ] Recovery Key записан и сохранён в recovery.txt
+- [ ] Recovery Contact добавлен (опционально)
+
+### YubiKey Apps
 - [ ] Yubico Authenticator установлен
 
 ### Keeper
@@ -134,4 +210,6 @@ TOTP (Proton):
 
 - [Apple: Security Keys](https://support.apple.com/en-us/HT213154)
 - [Apple: Two-Factor Authentication](https://support.apple.com/en-us/HT204915)
+- [Apple: Recovery Key](https://support.apple.com/en-us/HT208072)
+- [Apple: Recovery Contacts](https://support.apple.com/en-us/HT212513)
 - [YubiKey iOS](https://www.yubico.com/works-with-yubikey/catalog/ios/)

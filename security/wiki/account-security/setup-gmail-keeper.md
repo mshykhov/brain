@@ -198,6 +198,10 @@ XXXXXX
 XXXXXX
 [остальные коды]
 
+=== APPLE ID ===
+Recovery Key: XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX
+Recovery Contact: [имя человека]
+
 === YUBIKEY ===
 Primary: с собой
 Backup: дома
