@@ -2,84 +2,75 @@
 <feed xmlns='http://www.w3.org/2005/Atom' xmlns:apps='http://schemas.google.com/apps/2006'>
   <title>Mail Filters</title>
 
-  <!-- Filter 1: smhomelub@gmail.com -->
   <entry>
     <category term='filter'></category>
-    <title>From-smhomelub</title>
+    <title>smhomelub</title>
     <apps:property name='hasTheWord' value='deliveredto:smhomelub@gmail.com'/>
-    <apps:property name='label' value='From-smhomelub'/>
+    <apps:property name='label' value='Fwd/smhomelub'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
-  <!-- Filter 2: myronshykhov95@gmail.com -->
   <entry>
     <category term='filter'></category>
-    <title>From-myronshykhov95</title>
+    <title>myronshykhov95</title>
     <apps:property name='hasTheWord' value='deliveredto:myronshykhov95@gmail.com'/>
-    <apps:property name='label' value='From-myronshykhov95'/>
+    <apps:property name='label' value='Fwd/myronshykhov95'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
-  <!-- Filter 3: miroha135@gmail.com -->
   <entry>
     <category term='filter'></category>
-    <title>From-miroha135</title>
+    <title>miroha135</title>
     <apps:property name='hasTheWord' value='deliveredto:miroha135@gmail.com'/>
-    <apps:property name='label' value='From-miroha135'/>
+    <apps:property name='label' value='~/miroha135'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
-  <!-- Filter 4: shykhovmyron@gmail.com -->
   <entry>
     <category term='filter'></category>
-    <title>From-shykhovmyron</title>
+    <title>shykhovmyron</title>
     <apps:property name='hasTheWord' value='deliveredto:shykhovmyron@gmail.com'/>
-    <apps:property name='label' value='From-shykhovmyron'/>
+    <apps:property name='label' value='~/shykhovmyron'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
-  <!-- Filter 5: shikhovmyron@gmail.com -->
   <entry>
     <category term='filter'></category>
-    <title>From-shikhovmyron</title>
+    <title>shikhovmyron</title>
     <apps:property name='hasTheWord' value='deliveredto:shikhovmyron@gmail.com'/>
-    <apps:property name='label' value='From-shikhovmyron'/>
+    <apps:property name='label' value='~/shikhovmyron'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
-  <!-- Filter 6: 7417497@stud.nau.edu.ua -->
   <entry>
     <category term='filter'></category>
-    <title>From-NAU</title>
+    <title>NAU</title>
     <apps:property name='hasTheWord' value='deliveredto:7417497@stud.nau.edu.ua'/>
-    <apps:property name='label' value='From-NAU'/>
+    <apps:property name='label' value='~/NAU'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
-  <!-- Filter 7: shykhov.family@gmail.com -->
   <entry>
     <category term='filter'></category>
-    <title>From-family</title>
+    <title>family</title>
     <apps:property name='hasTheWord' value='deliveredto:shykhov.family@gmail.com'/>
-    <apps:property name='label' value='From-family'/>
+    <apps:property name='label' value='~/family'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
-  <!-- Filter 8: mirosh125@gmail.com -->
   <entry>
     <category term='filter'></category>
-    <title>From-mirosh125</title>
+    <title>mirosh125</title>
     <apps:property name='hasTheWord' value='deliveredto:mirosh125@gmail.com'/>
-    <apps:property name='label' value='From-mirosh125'/>
+    <apps:property name='label' value='~/mirosh125'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
-  <!-- Filter 9: shykhovmyron@icloud.com -->
   <entry>
     <category term='filter'></category>
-    <title>From-icloud</title>
+    <title>icloud</title>
     <apps:property name='hasTheWord' value='deliveredto:shykhovmyron@icloud.com'/>
-    <apps:property name='label' value='From-icloud'/>
+    <apps:property name='label' value='~/icloud'/>
     <apps:property name='shouldNeverSpam' value='true'/>
   </entry>
 
